@@ -594,11 +594,15 @@ export default function Dashboard() {
 
     const handleUpdateLabel = async (record: Execution, newLabel: string) => {
         try {
-            // We must send query to pass the backend validation, plus upload_id to match.
-            const payload = { ...record, label: newLabel, user };
+            // Use PATCH /api/data instead of POST /api/upload to avoid re-triggering judgment
+            const payload = { 
+                task_id: record.task_id, 
+                upload_id: record.upload_id, 
+                label: newLabel 
+            };
 
-            const res = await fetch('/api/upload', {
-                method: 'POST',
+            const res = await fetch('/api/data', {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });

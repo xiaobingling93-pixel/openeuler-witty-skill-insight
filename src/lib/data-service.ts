@@ -298,14 +298,14 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
           // No matched config found for this query
           // IMPORTANT: If this is an update and we already have a score, don't wipe it out 
           // unless user specifically requested a re-judgment.
-          if (!isUpdate || data.force_judgment) {
+          if ((!isUpdate || data.force_judgment) && !targetRecord.answer_score) {
               isAnswerCorrect = false;
               judgmentReason = NO_MATCH_REASON;
               targetRecord.answer_score = 0;
           }
       }
   } else if (targetRecord.query) {
-      if (!isUpdate || data.force_judgment) {
+      if ((!isUpdate || data.force_judgment) && !targetRecord.answer_score) {
           isAnswerCorrect = false;
           judgmentReason = NO_MATCH_REASON;
           targetRecord.answer_score = 0;
