@@ -66,7 +66,7 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
-        const { task_id, upload_id, query: newQuery, user_feedback } = body;
+        const { task_id, upload_id, query: newQuery, user_feedback, label: newLabel } = body;
 
         if (!task_id && !upload_id) {
             return NextResponse.json({ error: 'task_id or upload_id is required' }, { status: 400 });
@@ -87,7 +87,22 @@ export async function PATCH(request: Request) {
             });
         }
 
-        // 2. Handle Query Update
+        // 2. Handle Label Update (NEW)
+        if (newLabel !== undefined) {
+            const result = await saveExecutionRecord({
+                task_id: task_id || undefined,
+                upload_id: upload_id || undefined,
+                label: newLabel,
+                force_judgment: false
+            });
+             return NextResponse.json({
+                success: result.success,
+                record: result.record,
+                message: 'Label 已更新'
+            });
+        }
+
+        // 3. Handle Query Update
         if (typeof newQuery === 'string') {
             if (!newQuery.trim()) {
                 return NextResponse.json({ error: 'query must be a non-empty string' }, { status: 400 });
