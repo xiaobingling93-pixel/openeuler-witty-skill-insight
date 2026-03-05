@@ -7,10 +7,25 @@ from langchain_openai import ChatOpenAI
 
 
 def get_llm():
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+    model = os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    base_url = os.getenv("LLM_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    
+    if not api_key:
+        raise ValueError(
+            "未找到 LLM API Key。请设置以下环境变量之一：\n"
+            "  - LLM_API_KEY\n"
+            "  - DEEPSEEK_API_KEY\n"
+            "\n"
+            "或者在 .env 文件中配置：\n"
+            "  LLM_API_KEY=your_api_key\n"
+            "  DEEPSEEK_API_KEY=your_api_key"
+        )
+    
     llm = ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "deepseek-chat"),
-        base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1"),
-        api_key=os.getenv("LLM_API_KEY"),
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
         temperature=0,
         http_client=httpx.Client(verify=False),
         http_async_client=httpx.AsyncClient(verify=False),

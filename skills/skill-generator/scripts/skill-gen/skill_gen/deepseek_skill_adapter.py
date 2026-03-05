@@ -6,22 +6,21 @@ Implements platform-specific handling for DeepSeek AI (Anthropic) skills.
 Refactored from upload_skill.py and enhance_skill.py.
 """
 
+import asyncio
 import os
 import re
 import zipfile
-import asyncio
-from pathlib import Path
-from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from .utils import get_llm, validate_skill_format
-from .markdown_formatter import md_formatter
-from .pyscript_enhance import PyScriptEnhancer
 from .bash_extractor import BashExtractor
 from .extract_meta_data import extract_meta_data
 from .guides_extractor import run_guides_agent
-
-from skill_seekers.cli.adaptors.base import SkillAdaptor, SkillMetadata
+from .markdown_formatter import md_formatter
+from .pyscript_enhance import PyScriptEnhancer
+from .seekers.adaptor_base import SkillAdaptor, SkillMetadata
+from .utils import get_llm, validate_skill_format
 
 
 class DeepSeekAdaptor(SkillAdaptor):
@@ -113,16 +112,16 @@ version: {metadata.version}
         skill_dir = Path(skill_dir)
 
         # Determine output filename
-        if output_path.is_dir() or str(output_path).endswith('/'):
+        if output_path.is_dir() or str(output_path).endswith("/"):
             output_path = Path(output_path) / f"{skill_dir.name}.zip"
-        elif not str(output_path).endswith('.zip'):
-            output_path = Path(str(output_path) + '.zip')
+        elif not str(output_path).endswith(".zip"):
+            output_path = Path(str(output_path) + ".zip")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create ZIP file
-        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # Add SKILL.md (required)
             skill_md = skill_dir / "SKILL.md"
             if skill_md.exists():
@@ -137,7 +136,7 @@ version: {metadata.version}
             refs_dir = skill_dir / "references"
             if refs_dir.exists():
                 for ref_file in refs_dir.rglob("*"):
-                    if ref_file.is_file() and not ref_file.name.startswith('.'):
+                    if ref_file.is_file() and not ref_file.name.startswith("."):
                         arcname = ref_file.relative_to(skill_dir)
                         zf.write(ref_file, str(arcname))
 
@@ -145,7 +144,7 @@ version: {metadata.version}
             scripts_dir = skill_dir / "scripts"
             if scripts_dir.exists():
                 for script_file in scripts_dir.rglob("*"):
-                    if script_file.is_file() and not script_file.name.startswith('.'):
+                    if script_file.is_file() and not script_file.name.startswith("."):
                         arcname = script_file.relative_to(skill_dir)
                         zf.write(script_file, str(arcname))
 
@@ -153,7 +152,7 @@ version: {metadata.version}
             assets_dir = skill_dir / "assets"
             if assets_dir.exists():
                 for asset_file in assets_dir.rglob("*"):
-                    if asset_file.is_file() and not asset_file.name.startswith('.'):
+                    if asset_file.is_file() and not asset_file.name.startswith("."):
                         arcname = asset_file.relative_to(skill_dir)
                         zf.write(asset_file, str(arcname))
 
@@ -161,8 +160,8 @@ version: {metadata.version}
             guides_dir = skill_dir / "guides"
             if guides_dir.exists():
                 for guide_file in guides_dir.rglob("*"):
-                    if guide_file.is_file() and not guide_file.name.startswith('.'):
-                        if guide_file.suffix == '.md':
+                    if guide_file.is_file() and not guide_file.name.startswith("."):
+                        if guide_file.suffix == ".md":
                             arcname = guide_file.relative_to(skill_dir)
                             zf.write(guide_file, str(arcname))
 
@@ -217,7 +216,11 @@ version: {metadata.version}
             for d in dirs:
                 dir_path = Path(root) / d
                 try:
-                    if dir_path.exists() and dir_path.is_dir() and not any(dir_path.iterdir()):
+                    if (
+                        dir_path.exists()
+                        and dir_path.is_dir()
+                        and not any(dir_path.iterdir())
+                    ):
                         dir_path.rmdir()
                         print(f"  🧹 Removed empty directory: {dir_path}")
                 except Exception as e:
@@ -247,7 +250,7 @@ version: {metadata.version}
         Returns:
             True if key starts with 'sk-ant-'
         """
-        return api_key.strip().startswith('sk-ant-')
+        return api_key.strip().startswith("sk-ant-")
 
     def get_env_var_name(self) -> str:
         """
@@ -285,9 +288,9 @@ version: {metadata.version}
         # Read all .md files
         for ref_file in sorted(references_dir.glob("*.md")):
             print(f"  📖 Formatting {ref_file.name}...")
-            content = ref_file.read_text(encoding='utf-8')
+            content = ref_file.read_text(encoding="utf-8")
             enhance_content = md_formatter(content)
-            ref_file.write_text(enhance_content, encoding='utf-8')
+            ref_file.write_text(enhance_content, encoding="utf-8")
             print(f"  ✅ Saved enhanced {ref_file.name}")
 
         return True
@@ -332,19 +335,18 @@ version: {metadata.version}
                 # 调用 guides_extractor 处理 index.json
                 guides_results = asyncio.run(
                     run_guides_agent(
-                        index_path=str(guides_index_path),
-                        skill_dir=str(skill_dir)
+                        index_path=str(guides_index_path), skill_dir=str(skill_dir)
                     )
                 )
-                
+
                 # 读取生成的 guides markdown 文件
                 for guide_file in sorted(guides_dir.glob("*.md")):
                     try:
-                        content = guide_file.read_text(encoding='utf-8')
+                        content = guide_file.read_text(encoding="utf-8")
                         guides[guide_file.name] = content
                     except Exception as e:
                         print(f"  ⚠️  Could not read guide {guide_file.name}: {e}")
-                        
+
             except Exception as e:
                 print(f"  ⚠️  Failed to process guides/index.json: {e}")
 
@@ -352,15 +354,14 @@ version: {metadata.version}
         self.enhance_reference(skill_dir=skill_dir)
 
         # 拼接 references 内容为文本
-        references_text = "\n\n".join([
-            f"# {filename}\n\n{content}" 
-            for filename, content in references.items()
-        ])
-        
+        references_text = "\n\n".join(
+            [f"# {filename}\n\n{content}" for filename, content in references.items()]
+        )
+
         # 从 references 内容提取bash脚本到 scripts/ 目录
         bash_extractor = BashExtractor()
         bash_extractor.extract_scripts_from_references(skill_dir, references_text)
-        
+
         # 调用 PyScriptEnhancer 生成 scripts/ 目录下的脚本使用说明
         script_enhancer = PyScriptEnhancer()
         script_enhancer.enhance_scripts(skill_dir)
@@ -368,7 +369,7 @@ version: {metadata.version}
         # Read current SKILL.md
         current_skill_md = None
         if skill_md_path.exists():
-            current_skill_md = skill_md_path.read_text(encoding='utf-8')
+            current_skill_md = skill_md_path.read_text(encoding="utf-8")
             print(f"  ℹ Found existing SKILL.md ({len(current_skill_md)} chars)")
         else:
             print(f"  ℹ No existing SKILL.md, will create new one")
@@ -377,8 +378,10 @@ version: {metadata.version}
         scripts_references = None
         scripts_references_path = skill_dir / "references.md"
         if scripts_references_path.exists():
-            scripts_references = scripts_references_path.read_text(encoding='utf-8')
-            print(f"  ℹ Found existing scripts references.md ({len(scripts_references)} chars)")
+            scripts_references = scripts_references_path.read_text(encoding="utf-8")
+            print(
+                f"  ℹ Found existing scripts references.md ({len(scripts_references)} chars)"
+            )
         else:
             print(f"  ℹ No existing scripts references.md")
 
@@ -389,7 +392,7 @@ version: {metadata.version}
             current_skill_md,
             scripts_references,
             skill_dir,
-            guides
+            guides,
         )
 
         print("\n🤖 Asking DeepSeek to enhance SKILL.md...")
@@ -397,45 +400,40 @@ version: {metadata.version}
 
         # 调用 LLM 生成技能主体内容
         try:
-            message = self.llm.invoke(
-                [{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
+            message = self.llm.invoke([{"role": "user", "content": prompt}])
             skill_body = message.content.strip()
             print(f"  ✓ Generated skill body content ({len(skill_body)} chars)")
-            
+
             # 移除可能的元数据部分（如果模型返回了）
             yaml_pattern = r"^---\n(.*?)\n---"
-            skill_body = re.sub(yaml_pattern, "", skill_body, flags=re.DOTALL | re.MULTILINE).strip()
-            
+            skill_body = re.sub(
+                yaml_pattern, "", skill_body, flags=re.DOTALL | re.MULTILINE
+            ).strip()
+
         except Exception as e:
             print(f"❌ Error calling DeepSeek API: {e}")
             return False
-        
+
         if not skill_body:
             print(f"❌ Failed to generate valid skill body content")
             return False
-        
+
         # 使用大模型生成元数据
         print("\n📝 Generating metadata...")
         if not meta_data_format:
             print("  ⚠️  未找到元数据格式模板，无法生成元数据")
             return False
-        
+
         meta_data = extract_meta_data(
-            skill_body,
-            meta_data_format,
-            skill_name=skill_dir.name
+            skill_body, meta_data_format, skill_name=skill_dir.name
         )
-        
+
         if not meta_data:
             print("  ❌ Failed to generate metadata")
             return False
-        
+
         print(f"  ✓ Generated metadata ({len(meta_data)} chars)")
-        
+
         # 拼接元数据和技能内容
         enhanced_content = f"""---
 {meta_data}
@@ -448,16 +446,18 @@ version: {metadata.version}
         if not validate_skill_format(enhanced_content):
             print("  ⚠️  Final format validation failed")
             return False
-        
+
         print(f"  ✓ Format validation passed\n")
 
         # Save enhanced version
-        skill_md_path.write_text(enhanced_content, encoding='utf-8')
+        skill_md_path.write_text(enhanced_content, encoding="utf-8")
         print(f"  ✅ Saved enhanced SKILL.md")
 
         return True
 
-    def _read_reference_files(self, references_dir: Path, max_chars: int = 200000) -> Dict[str, str]:
+    def _read_reference_files(
+        self, references_dir: Path, max_chars: int = 200000
+    ) -> Dict[str, str]:
         """
         Read reference markdown files from skill directory.
 
@@ -480,7 +480,7 @@ version: {metadata.version}
                 break
 
             try:
-                content = ref_file.read_text(encoding='utf-8')
+                content = ref_file.read_text(encoding="utf-8")
                 # Limit individual file size
                 if len(content) > 30000:
                     content = content[:30000] + "\n\n...(truncated)"
@@ -517,34 +517,38 @@ version: {metadata.version}
             Tuple of (enhancement prompt, meta_data_format)
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         # Collect file paths from references/, scripts/, and guides/ directories
         reference_files = []
         script_files = []
         guide_files = []
-        
+
         if skill_dir:
             references_dir = skill_dir / "references"
             if references_dir.exists():
                 for ref_file in sorted(references_dir.rglob("*")):
-                    if ref_file.is_file() and not ref_file.name.startswith('.'):
+                    if ref_file.is_file() and not ref_file.name.startswith("."):
                         rel_path = ref_file.relative_to(skill_dir)
-                        reference_files.append(str(rel_path).replace('\\', '/'))
-            
+                        reference_files.append(str(rel_path).replace("\\", "/"))
+
             scripts_dir = skill_dir / "scripts"
             if scripts_dir.exists():
                 for script_file in sorted(scripts_dir.rglob("*")):
-                    if script_file.is_file() and not script_file.name.startswith('.'):
+                    if script_file.is_file() and not script_file.name.startswith("."):
                         rel_path = script_file.relative_to(skill_dir)
-                        script_files.append(str(rel_path).replace('\\', '/'))
-            
+                        script_files.append(str(rel_path).replace("\\", "/"))
+
             guides_dir = skill_dir / "guides"
             if guides_dir.exists():
                 for guide_file in sorted(guides_dir.rglob("*")):
-                    if guide_file.is_file() and not guide_file.name.startswith('.') and guide_file.suffix == '.md':
+                    if (
+                        guide_file.is_file()
+                        and not guide_file.name.startswith(".")
+                        and guide_file.suffix == ".md"
+                    ):
                         rel_path = guide_file.relative_to(skill_dir)
-                        guide_files.append(str(rel_path).replace('\\', '/'))
-        
+                        guide_files.append(str(rel_path).replace("\\", "/"))
+
         # Build file paths section
         file_paths_section = ""
         if reference_files or script_files or guide_files:
@@ -560,15 +564,15 @@ version: {metadata.version}
             if guide_files:
                 file_paths_section += "\nGuides directory files:\n"
                 for guide_path in guide_files:
-                    if guide_path.endswith('.md'):
+                    if guide_path.endswith(".md"):
                         file_paths_section += f"- {guide_path}\n"
             file_paths_section += "\n"
-        
+
         # Build script references note
         script_refs_note = ""
         if scripts_references:
             script_refs_note = "\nNote: The script usage documentation is located at ./references.md (脚本使用说明文档)"
-    
+
         prompt = f"""You are enhancing a skill's SKILL.md file. This skill is about: {skill_name}
 
 I've scraped documentation and organized it into reference files. Your job is to create an EXCELLENT SKILL.md that will help Claude use this documentation effectively.
@@ -612,12 +616,16 @@ REFERENCE DOCUMENTATION:
 
             # 提取 YAML 前置区作为元数据格式模板
             yaml_pattern = r"^---\n(.*?)\n---"
-            yaml_match = re.search(yaml_pattern, template_content, re.DOTALL | re.MULTILINE)
+            yaml_match = re.search(
+                yaml_pattern, template_content, re.DOTALL | re.MULTILINE
+            )
             if yaml_match:
                 meta_data_format = yaml_match.group(1).strip()
 
             # 移除 YAML 前置区（---包裹部分），只保留主体内容
-            template_body = re.sub(yaml_pattern, "", template_content, flags=re.DOTALL | re.MULTILINE).strip()
+            template_body = re.sub(
+                yaml_pattern, "", template_content, flags=re.DOTALL | re.MULTILINE
+            ).strip()
 
             prompt += f"""
 SKILL 模板文件参考：

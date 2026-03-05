@@ -1,41 +1,34 @@
-import os
 import asyncio
-import sys
-import pathlib
-import time
 import json
+import os
+import pathlib
+import sys
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
 import yaml
-from typing import Any, Dict, List, Tuple, Optional
 from rich.console import Console
-from rich.prompt import Prompt
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
 )
+from rich.prompt import Prompt
 
-sys.path.append(
-    os.path.join(os.path.dirname(__file__), "third_party", "Skill_Seekers", "src")
-)
-from .skill_seekers.cli.md_scraper import MarkdownToSkillConverter
-from .skill_seekers.cli.pdf_scraper import PDFToSkillConverter
-from .skill_name_gen import (
-    gen_skill_name_from_text,
-    agen_skill_name_from_text,
-)
-from .markdown_formatter import md_formatter
-from .doc_quality_validator import evaluate_doc_source_for_skill
-from .deepseek_skill_adapter import DeepSeekAdaptor
-from .html_extractor import run_html_extractor
-from .doc_reader import read_doc
 from .case_extractor import CaseExtractor
+from .deepseek_skill_adapter import DeepSeekAdaptor
+from .doc_quality_validator import evaluate_doc_source_for_skill
+from .doc_reader import read_doc
+from .html_extractor import run_html_extractor
+from .markdown_formatter import md_formatter
 from .pattern_merger import PatternMerger
+from .schema import Skill
+from .seekers.md_scraper import MarkdownToSkillConverter
+from .seekers.pdf_scraper import PDFToSkillConverter
 from .skill_formatter import SkillFormatter
-from .schema import (
-    Skill,
-)
+from .skill_name_gen import agen_skill_name_from_text, gen_skill_name_from_text
 
 
 async def generate_skill_v2(doc_path: str, output_dir: str) -> Skill:

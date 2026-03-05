@@ -21,58 +21,21 @@ description: 从文档生成Agent Skills。当用户要求从PDF、Markdown、HT
 
 ## 工作流程
 
-### 第1步：检查和安装依赖
+### 第1步：运行环境依赖检查
 
-**Python 版本要求**：需要 Python 3.11 或更高版本，以确保 langchain>=1.0 正确安装。
-
-首先检查系统是否已安装uv：
+**Python 工具链依赖**：需要预先安装 `uv` 命令行工具。
+首次运行推荐直接使用下方的集成包装脚本，它会自动处理 Python 虚拟环境（Virtual Environment）并在其中安装 `requirements.txt` 里的所有依赖：
 
 ```bash
-uv --version
+# 检测 uv 以及自动安装所需依赖环境，直接透传参数给 Python 命令行程序
+./scripts/gen.sh --help
 ```
 
-**如果没有uv，需要先安装**：
-
+如果检测到提示“未找到 'uv' 命令”，请先通过终端引导用户手动安装 uv：
 ```bash
-# Linux/macOS
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 或使用pip
-pip install uv
 ```
-
-然后创建 uv 虚拟环境并安装项目依赖：
-
-```bash
-# 创建虚拟环境（如果不存在）
-uv venv
-
-# 激活虚拟环境
-# Linux/macOS:
-source .venv/bin/activate
-
-# Windows:
-# .venv\Scripts\activate
-
-# 安装项目依赖
-uv pip install -r scripts/skill-gen/requirements.txt
-```
-
-**初始化 Git Submodule（Skill_Seekers）**：
-
-skill-gen 依赖 Skill_Seekers 第三方库，需要初始化 git submodule：
-
-```bash
-cd scripts/skill-gen
-git submodule update --init --recursive
-```
-
-如果 git submodule 初始化失败，可以手动下载：
-
-```bash
-cd scripts/skill-gen/skill_gen/third_party
-git clone https://github.com/ICEORY/Skill_Seekers.git
-```
+(安装完成后请用户打开新终端或者自行 `source` 相关环境变量以使其生效)。
 
 ### 第2步：获取模型配置
 
@@ -150,10 +113,10 @@ echo "Model: $ANTHROPIC_MODEL"
 
 **如果获取到了平台配置**：
 
-将配置传递给 skill-gen CLI（通过参数）：
+将配置传递给包装脚本 `gen.sh`：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py \
+./scripts/gen.sh \
   --input document.pdf \
   --output ./my-skill \
   --llm-api-key="sk-xxxx" \
@@ -169,52 +132,51 @@ uv run scripts/skill-gen/skill_gen_cli.py \
 
 如果 AI 平台没有提供配置，验证 .env 文件：
 
+**.env 配置文件结构（推荐方式）**：
+
 ```bash
-uv run scripts/verify_config.py
+# DeepSeek API 配置（推荐，系统会自动识别）
+DEEPSEEK_API_KEY=sk-xxxx-xxxx-xxxx-xxxx
+DEEPSEEK_BASE_URL="https://api.deepseek.com/"
+DEEPSEEK_MODEL="deepseek-chat"
 ```
 
-**.env 配置文件结构**：
+**或者使用通用 LLM 配置**：
 
 ```bash
-# 必需配置
-LLM_API_KEY=your_api_key_here
-
-# 可选配置
+# 通用 LLM 配置（优先级最高）
+LLM_API_KEY=sk-xxxx-xxxx-xxxx-xxxx
 LLM_MODEL=deepseek-chat
 LLM_BASE_URL=https://api.deepseek.com/v1
 ```
 
+**配置优先级**：
+1. 命令行参数：`--llm-api-key`（最高优先级）
+2. 环境变量：`LLM_API_KEY`
+3. 环境变量：`DEEPSEEK_API_KEY`（自动回退）
+4. 默认值：使用 DeepSeek 默认配置
+
 **处理配置缺失**：
 
-如果验证失败（LLM_API_KEY 未设置），通过自然语言引导用户提供配置：
+如果验证失败（未找到任何 API Key），请按如下格式询问用户提供配置：
 
 ```
-请提供以下信息：
-
-1. LLM_API_KEY: 你的 API Key (必需)
-2. LLM_MODEL: 模型名称 (可选，默认 deepseek-chat)
-3. LLM_BASE_URL: API 基础 URL (可选，默认 https://api.deepseek.com/v1)
-
-示例格式：
-  LLM_API_KEY=sk-xxxx
-  LLM_MODEL=deepseek-chat
-  LLM_BASE_URL=https://api.deepseek.com/v1
+Question: "未找到有效的模型配置 (API Key)。请选择如何提供配置？"
+Options: "方式1（推荐）：提供 DeepSeek API Key", "方式2：提供通用 LLM API Key", "取消操作"
 ```
+
+（并在用户选择后，指导其以 `KEY=XXXX` 形式提供相应的配置内容）
 
 等待用户提供配置后，保存到 .env 文件：
 
 ```bash
 # 将用户提供的配置保存到 .env
-echo "LLM_API_KEY=sk-xxxx" >> .env
-echo "LLM_MODEL=deepseek-chat" >> .env
-echo "LLM_BASE_URL=https://api.deepseek.com/v1" >> .env
+echo "DEEPSEEK_API_KEY=sk-xxxx" >> .env
+echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/" >> .env
+echo "DEEPSEEK_MODEL=deepseek-chat" >> .env
 ```
 
-然后重新验证：
-
-```bash
-uv run scripts/verify_config.py
-```
+系统会自动从 DEEPSEEK_* 配置中读取并使用，无需额外配置 LLM_* 变量。
 
 ### 第4步：识别输入来源
 
@@ -226,13 +188,11 @@ uv run scripts/verify_config.py
 
 **情况B：用户只描述了需求，未提供文档**
 
-需要交互询问用户：
+需要按如下格式询问用户：
 
 ```
-请提供以下信息之一：
-1. 文档文件路径（如：/path/to/document.pdf）
-2. 文档URL（如：https://example.com/docs）
-3. 或者提供文档内容直接处理
+Question: "未检测到具体的输入文档。请选择提供来源的方式？"
+Options: "1. 提供文档文件路径", "2. 提供文档在线URL", "3. 直接提供文档文本内容"
 ```
 
 等待用户提供输入后，再进入第5步。
@@ -250,10 +210,10 @@ uv run scripts/verify_config.py
 
 #### 5.1 在前台运行技能生成
 
-**直接在前台运行命令**：
+**直接在使用包装脚本 `./scripts/gen.sh` 前台运行命令**：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py --input document.pdf --output ./my-skill
+./scripts/gen.sh --input document.pdf --output ./my-skill
 ```
 
 命令会一直运行直到完成。你可以看到实时输出，了解处理进度。
@@ -261,7 +221,7 @@ uv run scripts/skill-gen/skill_gen_cli.py --input document.pdf --output ./my-ski
 **如果通过参数传递了平台配置**：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py \
+./scripts/gen.sh \
   --input document.pdf \
   --output ./my-skill \
   --llm-api-key="sk-xxxx" \
@@ -295,13 +255,13 @@ uv run scripts/skill-gen/skill_gen_cli.py \
 **从单个文件生成**（使用平台配置或 .env）：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py --input document.pdf --output ./my-skill
+./scripts/gen.sh --input document.pdf --output ./my-skill
 ```
 
 **从URL生成**：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py --input https://example.com/docs --output ./web-skill
+./scripts/gen.sh --input https://example.com/docs --output ./web-skill
 ```
 
 **从文本内容生成**（直接提供内容）：
@@ -310,14 +270,75 @@ uv run scripts/skill-gen/skill_gen_cli.py --input https://example.com/docs --out
 # 先将内容写入临时文件
 echo "你的文档内容" > /tmp/input.md
 # 然后在前台运行生成
-uv run scripts/skill-gen/skill_gen_cli.py --input /tmp/input.md --output ./my-skill
+./scripts/gen.sh --input /tmp/input.md --output ./my-skill
 ```
 
 **批量生成**：
 
 ```bash
-uv run scripts/skill-gen/skill_gen_cli.py --input ./docs/*.pdf --output ./skills --concurrency 3
+./scripts/gen.sh --input ./docs/*.pdf --output ./skills --concurrency 3
 ```
+
+### 第6步：询问是否加载到本地项目（推荐）
+
+在技能生成成功后，询问用户是否将生成的skill直接加载到当前项目的 `.opencode/skills` 目录下，以便立即使用。
+
+**询问方式**：
+
+```
+Question: "✅ Skill生成成功！(位于 <output-path>/<skill-name>)。是否将此技能加载到当前项目的 .opencode/skills 目录下以便立即使用（需要重启）？"
+Options: "是，加载到 .opencode/skills 目录", "否，保持当前位置"
+```
+
+**如果用户同意（加载到本地）**：
+
+1. **确认项目结构**：检查当前项目是否有 `.opencode/skills` 目录
+   ```bash
+   # 检查 .opencode/skills 目录是否存在
+   if [ ! -d ".opencode/skills" ]; then
+       mkdir -p .opencode/skills
+   fi
+   ```
+
+2. **移动技能目录**：将生成的skill移动到 `.opencode/skills` 目录
+   ```bash
+   # 假设生成的skill在 /path/to/generated-skills/skill-name/
+   # 移动到当前项目的 .opencode/skills/
+   mv /path/to/generated-skills/skill-name/ .opencode/skills/
+   ```
+
+3. **验证移动成功**：
+   ```bash
+   # 检查技能是否成功移动
+   ls -la .opencode/skills/skill-name/
+   ```
+
+4. **提醒用户重启**：
+   ```
+   Question: "✅ 技能已成功加载到 .opencode/skills/<skill-name> ! 重要提示：需要重启 opencode 才能使技能生效。请选择后续操作："
+   Options: "收到，我稍后会重启应用"
+   ```
+
+**如果用户不同意（保持当前位置）**：
+
+```
+Question: "✅ 技能已生成并保持在当前位置：<output-path>/<skill-name>。如需使用，请后续执行 mv <output-path>/<skill-name>/ .opencode/skills/ 移动。请选择后续操作："
+Options: "收到"
+```
+
+### 第7步：上传至 Insight 平台（如果用户要求）
+
+如果用户在生成技能的指令中明确要求**"上传"、"同步"或"保存到 Insight"**，你必须在生成完成（第5步结束）、验证通过且目录存在后，主动调用skill-sync技能对新生成的技能目录进行上传处理。
+
+**操作要求**：
+1. 确认输出目录中确实生成了包含 `SKILL.md` 的技能文件夹。
+2. 告知用户："正在启动 skill-sync 准备上传，由于涉及环境配置覆盖风险，我将调用系统上传组件。请关注接下来的终端询问确认。"
+3. 跨技能调用 `skill-sync` 技能，通过如下路径执行：
+   ```bash
+   node ../skill-sync/scripts/push.js <你在这个技能里刚刚生成的绝对路径/相对路径>
+   ```
+4. 请不要在这个技能内处理打包或网络请求，这是 `skill-sync` 的专属责任。
+
 
 ## 核心参数
 
@@ -374,32 +395,34 @@ du -sh ./my-skill/
 
 **1. 配置缺失**
 ```
-错误：未找到 LLM_API_KEY
+错误：未找到 LLM API Key
 解决：
-  1. 判断当前 AI 平台并获取配置：
-     - OpenCode: node scripts/opencode-model-detector.cjs
-     - Claude Code: 检查环境变量 ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
-     - Cursor/其他: 从工具设置获取配置
-  2. 或验证 .env 配置：uv run scripts/verify_config.py
-  3. 手动配置：echo "LLM_API_KEY=sk-xxxx" >> .env
+  方式1（推荐）：配置 DeepSeek API
+    echo "DEEPSEEK_API_KEY=sk-xxxx" >> .env
+    echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/" >> .env
+    echo "DEEPSEEK_MODEL=deepseek-chat" >> .env
+
+  方式2：配置通用 LLM API
+    echo "LLM_API_KEY=sk-xxxx" >> .env
+    echo "LLM_MODEL=deepseek-chat" >> .env
+    echo "LLM_BASE_URL=https://api.deepseek.com/v1" >> .env
+
+  方式3：通过命令行参数传递
+    ./scripts/gen.sh --input doc.pdf --output ./out --llm-api-key=sk-xxxx
+
+  方式4：从 AI 平台获取配置
+    - OpenCode: node scripts/opencode-model-detector.cjs
+    - Claude Code: 检查环境变量 ANTHROPIC_AUTH_TOKEN
+    - Cursor/其他: 从工具设置获取配置
 ```
 
-**2. 依赖缺失**
+**2. 依赖缺失或虚拟环境错乱**
 ```
-错误：ModuleNotFoundError: No module named 'xxx'
+错误：ModuleNotFoundError: No module named 'xxx' 或者是 No virtual environment found
 解决：
-  1. 创建虚拟环境：uv venv
-  2. 激活环境：source .venv/bin/activate
-  3. 安装依赖：uv pip install -r scripts/skill-gen/requirements.txt
-```
-
-**6. uv 虚拟环境错误**
-```
-错误：No virtual environment found; run `uv venv` to create an environment
-解决：
-  1. 创建虚拟环境：uv venv
-  2. 激活环境：source .venv/bin/activate
-  3. 重新安装依赖
+  由于已经提供集成式包装脚本，几乎不会遇到此问题。如果你直接调用了 Python 文件，退回到使用包装脚本：
+  ./scripts/gen.sh 
+  （脚本会自动在 '.venv' 中处理依赖的安装和读取）
 ```
 
 **3. uv未安装**
@@ -411,14 +434,13 @@ du -sh ./my-skill/
 **4. 文档处理失败**
 ```
 错误：无法处理文档格式
-解决：uv run scripts/skill-gen/skill_gen_cli.py --input doc.pdf --output ./test
+解决：./scripts/gen.sh --input doc.pdf --output ./test
 ```
 
 **5. 权限问题**
 ```
 错误：Permission denied
-解决：chmod +x scripts/skill-gen/skill_gen_cli.py
-  或使用：uv run scripts/skill-gen/skill_gen_cli.py
+解决：chmod +x scripts/gen.sh
 ```
 
 **7. 输出文件问题**
@@ -461,6 +483,7 @@ du -sh ./my-skill/
 6. **批量处理**：使用`--concurrency`提高效率，但不要超过5
 7. **质量控制**：通过`--quality-threshold`调整生成质量（0.5-0.9）
 8. **输出检查**：生成后检查SKILL.md的description是否符合预期
+9. **本地加载**：生成后主动询问用户是否加载到 .opencode/skills 目录，方便立即使用
 
 ## 参考资源
 
