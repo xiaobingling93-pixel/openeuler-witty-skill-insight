@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+
+const {
+  findPidOnPort,
+  getPort
+} = require('./utils.js')
+
+async function run(options) {
+  const port = getPort(options)
+  
+  console.log(`=== Witty-Skill-Insight Service Status ===\n`)
+  
+  const pid = findPidOnPort(port)
+  
+  if (pid) {
+    console.log('✓ Service is running')
+    console.log(`  PID: ${pid}`)
+    console.log(`  Port: ${port}`)
+    console.log(`  URL: http://localhost:${port}`)
+  } else {
+    console.log('✗ Service is not running')
+    console.log(`  Port: ${port}`)
+    console.log(`\nTo start: npx witty-skill-insight start --port ${port}`)
+  }
+}
+
+module.exports = { run }
