@@ -105,6 +105,26 @@ def main() -> int:
     if args.llm_base_url:
         os.environ["LLM_BASE_URL"] = args.llm_base_url
 
+    # 检查API Key配置
+    llm_api_key = os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+    if not llm_api_key:
+        env_file = project_root / ".env"
+        print("❌ 错误: 未找到 LLM API Key 配置")
+        print("\n请配置以下环境变量之一：")
+        print("  1. LLM_API_KEY (推荐)")
+        print("  2. DEEPSEEK_API_KEY (自动回退)")
+        print("\n配置方式：")
+        print(f"  编辑文件: {env_file}")
+        print("  添加以下内容：")
+        print("    LLM_API_KEY=your_api_key_here")
+        print("    # 或者")
+        print("    DEEPSEEK_API_KEY=your_api_key_here")
+        print("\n或者通过命令行参数传递：")
+        print("  --llm-api-key=your_api_key_here")
+        print("\n获取 API Key:")
+        print("  DeepSeek: https://platform.deepseek.com/")
+        return 1
+
     # 如果没有通过参数指定 output，则尝试从环境变量 CUSTOM_SKILL_PATHS 读取
     output_path = args.output or os.getenv("CUSTOM_SKILL_PATHS")
     if not output_path:
