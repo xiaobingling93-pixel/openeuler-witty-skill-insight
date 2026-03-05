@@ -1,0 +1,43 @@
+# Development files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+.next
+out
+dist
+build
+
+# Dependencies
+node_modules
+
+# Log files
+server.log
+*.log
+
+# Temporary files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE configurations
+.idea
+.vscode
+*.iml
+
+# Test coverage
+coverage
+.nyc_output
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Data directory
+data/
+
+# Exclude specific directories and files
+skills/
+README.md
+docs/
