@@ -19,7 +19,7 @@ export async function POST(
   let user = body.user || searchParams.get('user');
 
   const apiKey = request.headers.get('x-api-key') || body.apiKey;
-  let model: string | undefined = body.model || searchParams.get('model') || undefined;
+  const model: string | undefined = body.model || searchParams.get('model') || undefined;
 
   if (apiKey) {
       try {

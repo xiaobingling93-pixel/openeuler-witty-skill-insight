@@ -118,7 +118,7 @@ export async function judgeAnswer(
     // --- Calculate Score in Code (to avoid LLM math errors) ---
     let totalWeightedScore = 0;
     let totalWeight = 0;
-    let reasonLines: string[] = [];
+    const reasonLines: string[] = [];
 
     // Process Root Causes
     rcList.forEach(rc => {
@@ -246,7 +246,7 @@ function parseEvaluationItemsFromReason(judgmentReason: string): Array<{
     if (!judgmentReason) return items;
     
     const lines = judgmentReason.split('\n');
-    let itemIndex = { rc: 0, ka: 0 };
+    const itemIndex = { rc: 0, ka: 0 };
     
     for (const line of lines) {
         // 匹配 Root Cause 行
@@ -834,7 +834,7 @@ export async function analyzeSession(input: any[], user?: string | null): Promis
         }
 
         // --- NEW LOGIC: Accumulate preceding assistant messages ---
-        let contentCandidates: string[] = [];
+        const contentCandidates: string[] = [];
         let stopBacktracking = false; // Flag to stop outer loop if needed (though we only process last interaction logic currently)
 
         // 1. Check preceding assistant messages in requestMessages

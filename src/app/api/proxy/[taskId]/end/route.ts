@@ -334,7 +334,7 @@ export async function POST(
     if (analysis.query) analysis.query = analysis.query.trim().replace(/^['"]+|['"]+$/g, '').trim();
     if (primarySkillName) analysis.skill = primarySkillName;
 
-    let criteria: any = { skill_definition: skillDef };
+    const criteria: any = { skill_definition: skillDef };
     
     try {
         const configs = await readConfig(session.user);

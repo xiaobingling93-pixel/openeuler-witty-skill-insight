@@ -84,12 +84,12 @@ const formatTokens = (num: number) => {
 const formatDateTime = (ts: string | Date) => {
     if (!ts) return '-';
     const d = new Date(ts);
-    return d.getFullYear() + '/' + 
-           String(d.getMonth() + 1).padStart(2, '0') + '/' + 
-           String(d.getDate()).padStart(2, '0') + ' ' + 
-           String(d.getHours()).padStart(2, '0') + ':' + 
-           String(d.getMinutes()).padStart(2, '0') + ':' + 
-           String(d.getSeconds()).padStart(2, '0');
+    return d.getFullYear() + '/' +
+        String(d.getMonth() + 1).padStart(2, '0') + '/' +
+        String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0') + ':' +
+        String(d.getSeconds()).padStart(2, '0');
 };
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -175,8 +175,6 @@ export default function Dashboard() {
             if (stored) setLocalApiKey(stored);
         }
     }, [apiKey]);
-    
-
 
     const [activeTab, setActiveTab] = useState<'dashboard' | 'config' | 'skill'>('dashboard');
     const [showUserModal, setShowUserModal] = useState(false); // State for User Modal
@@ -189,14 +187,14 @@ export default function Dashboard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: user })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.apiKey) {
-                    setLocalApiKey(data.apiKey);
-                    localStorage.setItem('api_key', data.apiKey); // Keep cache in sync with DB
-                }
-            })
-            .catch(err => console.error("Failed to fetch fresh API key", err));
+                .then(res => res.json())
+                .then(data => {
+                    if (data.apiKey) {
+                        setLocalApiKey(data.apiKey);
+                        localStorage.setItem('api_key', data.apiKey); // Keep cache in sync with DB
+                    }
+                })
+                .catch(err => console.error("Failed to fetch fresh API key", err));
         }
     }, [showUserModal, user]);
 
@@ -258,10 +256,10 @@ export default function Dashboard() {
         baseUrl?: string;
         model?: string;
     }
-    
+
     const [allConfigs, setAllConfigs] = useState<EvalConfigItem[]>([]);
     const [activeConfigId, setActiveConfigId] = useState<string>('default');
-    
+
     // Editing state in modal
     const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
     const [tempConfig, setTempConfig] = useState<EvalConfigItem>({
@@ -277,7 +275,7 @@ export default function Dashboard() {
             // 1. Prepare new list
             let newConfigs = [...allConfigs];
             const configToSave = { ...tempConfig };
-            
+
             // If new, generate ID
             if (configToSave.id === 'new') {
                 configToSave.id = `config_${Date.now()}`;
@@ -293,16 +291,16 @@ export default function Dashboard() {
                 baseUrl: configToSave.baseUrl,
                 model: configToSave.model
             };
-            
+
             setSettingsStatus({ type: 'success', msg: 'Testing connection...' }); // reuse success style for info
-            
+
             const testRes = await fetch('/api/settings/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(testPayload)
             });
             const testData = await testRes.json();
-            
+
             if (!testData.success) {
                 setSettingsStatus({ type: 'error', msg: `Connection Test Failed: ${testData.error}` });
                 setIsSavingSettings(false);
@@ -317,11 +315,11 @@ export default function Dashboard() {
             }
 
             const payload = {
-                activeConfigId: newActiveId, 
+                activeConfigId: newActiveId,
                 configs: newConfigs
             };
             const finalPayload = {
-                settings: payload, 
+                settings: payload,
                 user: user
             };
 
@@ -330,7 +328,7 @@ export default function Dashboard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload)
             });
-            
+
             if (res.ok) {
                 setAllConfigs(newConfigs);
                 setActiveConfigId(newActiveId);
@@ -351,10 +349,10 @@ export default function Dashboard() {
     const activateConfig = async (id: string) => {
         const payload = { activeConfigId: id, configs: allConfigs };
         const finalPayload = { settings: payload, user };
-        await fetch('/api/settings', { 
-            method: 'POST', 
+        await fetch('/api/settings', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(finalPayload) 
+            body: JSON.stringify(finalPayload)
         });
         setActiveConfigId(id);
     };
@@ -364,7 +362,7 @@ export default function Dashboard() {
         const newConfigs = allConfigs.filter(c => c.id !== id);
         let newActive = activeConfigId;
         if (id === activeConfigId) newActive = newConfigs[0]?.id || '';
-        
+
         const payload = { activeConfigId: newActive, configs: newConfigs };
         await fetch('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
         setAllConfigs(newConfigs);
@@ -378,9 +376,9 @@ export default function Dashboard() {
     // When modal opens, if we have configs, show list. if empty, show edit new.
     useEffect(() => {
         if (showSettingsModal) {
-             fetchServerSettings();
-             setSettingsStatus(null);
-             setEditingConfigId(null);
+            fetchServerSettings();
+            setSettingsStatus(null);
+            setEditingConfigId(null);
         }
     }, [showSettingsModal]);
 
@@ -423,8 +421,8 @@ export default function Dashboard() {
             // If they logged in as 'witty_public', filtering by 'witty_public' works.
             // If they logged in as 'public', filtering by 'public' returns nothing.
             // Let's aliasing 'public' -> 'witty_public' for view convenience if that was the intention.
-            
-            let queryUser = user;
+
+            const queryUser = user;
 
             const url = queryUser ? `/api/data?user=${encodeURIComponent(queryUser)}` : '/api/data';
             const res = await fetch(url, { cache: 'no-store' });
@@ -589,7 +587,7 @@ export default function Dashboard() {
                     latency: Number(data.record.latency || 0),
                     framework: data.record.framework || 'Unknown',
                     skill_score: data.record.skill_score !== undefined ? Number(data.record.skill_score) : undefined,
-                    answer_score: data.record.answer_score !== undefined ? Number(data.record.answer_score) : (data.record.is_answer_correct ? 1.0 : 0.0)
+                    answer_score: data.record.answer_score !== null ? Number(data.record.answer_score) : (data.record.is_answer_correct ? 1.0 : 0.0)
                 };
 
                 setRawData(prev => prev.map(r =>
@@ -608,7 +606,7 @@ export default function Dashboard() {
                 try {
                     const errData = await res.json();
                     if (errData && errData.error) errorMsg += `: ${errData.error}`;
-                } catch (e) {}
+                } catch (e) { }
                 alert(errorMsg);
             }
         } catch (e) {
@@ -625,10 +623,10 @@ export default function Dashboard() {
     const handleUpdateLabel = async (record: Execution, newLabel: string) => {
         try {
             // Use PATCH /api/data instead of POST /api/upload to avoid re-triggering judgment
-            const payload = { 
-                task_id: record.task_id, 
-                upload_id: record.upload_id, 
-                label: newLabel 
+            const payload = {
+                task_id: record.task_id,
+                upload_id: record.upload_id,
+                label: newLabel
             };
 
             const res = await fetch('/api/data', {
@@ -779,9 +777,9 @@ export default function Dashboard() {
                 // --- EDIT MODE ---
                 let newConfigs = [...configs];
                 newConfigs = newConfigs.map(c => c.id === editingConfig.id ? { ...c, ...editingConfig } as ConfigItem : c);
-                
-                const res = await fetch('/api/config', { 
-                    method: 'POST', 
+
+                const res = await fetch('/api/config', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ configs: newConfigs, user })
                 });
@@ -805,8 +803,8 @@ export default function Dashboard() {
     const deleteConfig = async (id: string) => {
         if (!confirm('确定删除此配置?')) return;
         const newConfigs = configs.filter(c => c.id !== id);
-        const res = await fetch('/api/config', { 
-            method: 'POST', 
+        const res = await fetch('/api/config', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ configs: newConfigs, user }) // Include user in the body
         });
@@ -815,9 +813,9 @@ export default function Dashboard() {
 
     // --- Derived Data ---
     const allFrameworks = useMemo(() => Array.from(new Set(rawData.map(d => d.framework))).sort(), [rawData]);
-    
+
     const allQueries = useMemo(() => Array.from(new Set(rawData.map(d => d.query))).sort(), [rawData]);
-    
+
     // Dynamic Labels for Dropdown
     // Should depend on the Comparison Mode Dataset
     const filteredData = useMemo(() => {
@@ -847,7 +845,7 @@ export default function Dashboard() {
         });
         return Array.from(models).sort();
     }, [filteredData]);
-    
+
     // Series to use for comparison
     const comparisonSeries = comparisonDimension === 'framework' ? allFrameworks : allModels;
 
@@ -929,27 +927,27 @@ export default function Dashboard() {
 
         // Group by Label if needed
         if (comparisonGroupByLabel) {
-             const result: any[] = [];
-             // Get labels from data
-             const labels = Array.from(new Set(dataToUse.map(d => d.label || 'Other'))).sort();
-             
-             labels.forEach(lbl => {
-                 if (selectedComparisonLabels.length > 0 && !selectedComparisonLabels.includes(lbl)) return;
+            const result: any[] = [];
+            // Get labels from data
+            const labels = Array.from(new Set(dataToUse.map(d => d.label || 'Other'))).sort();
 
-                 const lblData = dataToUse.filter(d => (d.label || 'Other') === lbl);
-                 if (lblData.length === 0) return;
+            labels.forEach(lbl => {
+                if (selectedComparisonLabels.length > 0 && !selectedComparisonLabels.includes(lbl)) return;
 
-                 const row: any = { label: lbl, data: [] };
-                 // We need to aggregate per Query to get points for the chart?
-                 // Actually the previous logic was: X-axis is Query (or Index), Lines are Frameworks.
-                 // So for this label, we gather unique queries.
-                 const lblQueries = Array.from(new Set(lblData.map(d => d.query)));
-                 
-                 lblQueries.forEach(q => {
-                     const qRecord: any = { shortQuery: q.length > 15 ? q.substring(0, 15) + '...' : q };
-                     relevantSeries.forEach(seriesName => {
-                         const fwOrModelData = lblData.filter(d => d.query === q && (comparisonDimension === 'framework' ? d.framework : (d.model || 'Unknown')) === seriesName);
-                         if (fwOrModelData.length > 0) {
+                const lblData = dataToUse.filter(d => (d.label || 'Other') === lbl);
+                if (lblData.length === 0) return;
+
+                const row: any = { label: lbl, data: [] };
+                // We need to aggregate per Query to get points for the chart?
+                // Actually the previous logic was: X-axis is Query (or Index), Lines are Frameworks.
+                // So for this label, we gather unique queries.
+                const lblQueries = Array.from(new Set(lblData.map(d => d.query)));
+
+                lblQueries.forEach(q => {
+                    const qRecord: any = { shortQuery: q.length > 15 ? q.substring(0, 15) + '...' : q };
+                    relevantSeries.forEach(seriesName => {
+                        const fwOrModelData = lblData.filter(d => d.query === q && (comparisonDimension === 'framework' ? d.framework : (d.model || 'Unknown')) === seriesName);
+                        if (fwOrModelData.length > 0) {
                             const avgLat = fwOrModelData.reduce((s, x) => s + x.latency, 0) / fwOrModelData.length;
                             const avgTok = fwOrModelData.reduce((s, x) => s + x.tokens, 0) / fwOrModelData.length;
                             const evaluatedDatas = fwOrModelData.filter(d => d.answer_score !== null);
@@ -958,17 +956,17 @@ export default function Dashboard() {
                             qRecord[`${seriesName}_lat`] = parseFloat(avgLat.toFixed(2));
                             qRecord[`${seriesName}_tok`] = Math.round(avgTok);
                             qRecord[`${seriesName}_score`] = parseFloat(avgScore.toFixed(2));
-                         }
-                     });
-                     if (Object.keys(qRecord).length > 1) { // Check if any series data was added
+                        }
+                    });
+                    if (Object.keys(qRecord).length > 1) { // Check if any series data was added
                         row.data.push(qRecord);
-                     }
-                 });
-                 if (row.data.length > 0) {
+                    }
+                });
+                if (row.data.length > 0) {
                     result.push(row);
-                 }
-             });
-             return result;
+                }
+            });
+            return result;
         } else {
             // ORIGINAL LOGIC (Group by Query)
             const groups: Record<string, Execution[]> = {};
@@ -977,7 +975,7 @@ export default function Dashboard() {
                 groups[d.query].push(d);
             });
 
-            let result: AvgComparison[] = [];
+            const result: AvgComparison[] = [];
             Object.keys(groups).forEach(q => {
                 const group = groups[q];
                 const latestTs = Math.max(...group.map(x => new Date(x.timestamp).getTime()));
@@ -1129,8 +1127,8 @@ export default function Dashboard() {
                         {allConfigs.length > 0 ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #334155', borderRadius: '4px', padding: '4px 8px', background: '#0f172a' }}>
                                 <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Eval:</span>
-                                <select 
-                                    value={activeConfigId || 'none'} 
+                                <select
+                                    value={activeConfigId || 'none'}
                                     onChange={(e) => activateConfig(e.target.value)}
                                     style={{ background: 'transparent', color: '#e2e8f0', border: 'none', maxWidth: '140px', outline: 'none', cursor: 'pointer' }}
                                 >
@@ -1140,7 +1138,7 @@ export default function Dashboard() {
                                     ))}
                                 </select>
                                 <div style={{ width: '1px', height: '14px', background: '#334155', margin: '0 4px' }}></div>
-                                <button 
+                                <button
                                     onClick={() => setShowSettingsModal(true)}
                                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0', fontSize: '1rem' }}
                                     title="Manage Configurations"
@@ -1149,13 +1147,13 @@ export default function Dashboard() {
                                 </button>
                             </div>
                         ) : (
-                            <button 
-                                className="btn-secondary" 
-                                style={{ 
-                                    padding: '4px 8px', 
-                                    background: 'transparent', 
+                            <button
+                                className="btn-secondary"
+                                style={{
+                                    padding: '4px 8px',
+                                    background: 'transparent',
                                     border: '1px solid #334155',
-                                    color: '#94a3b8' 
+                                    color: '#94a3b8'
                                 }}
                                 onClick={() => setShowSettingsModal(true)}
                             >
@@ -1177,10 +1175,10 @@ export default function Dashboard() {
                     justifyContent: 'center',
                     zIndex: 2000
                 }} onClick={(e) => {
-                   if (e.target === e.currentTarget) setShowSettingsModal(false);
+                    if (e.target === e.currentTarget) setShowSettingsModal(false);
                 }}>
                     <div className="card" style={{ width: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-                        
+
                         {/* VIEW 1: LIST OF CONFIGS */}
                         {!editingConfigId && (
                             <>
@@ -1191,12 +1189,12 @@ export default function Dashboard() {
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.5rem' }}>
                                     {allConfigs.map(config => (
-                                        <div key={config.id} style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
+                                        <div key={config.id} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
                                             alignItems: 'center',
-                                            padding: '10px', 
-                                            background: activeConfigId === config.id ? 'rgba(59, 130, 246, 0.1)' : '#1e293b', 
+                                            padding: '10px',
+                                            background: activeConfigId === config.id ? 'rgba(59, 130, 246, 0.1)' : '#1e293b',
                                             border: activeConfigId === config.id ? '1px solid #3b82f6' : '1px solid #334155',
                                             borderRadius: '6px'
                                         }}>
@@ -1208,19 +1206,19 @@ export default function Dashboard() {
                                                     {config.provider} • {config.model}
                                                 </div>
                                             </div>
-                                            
+
                                             <div style={{ display: 'flex', gap: '8px' }}>
                                                 {activeConfigId !== config.id && (
-                                                    <button 
-                                                        className="btn-secondary" 
+                                                    <button
+                                                        className="btn-secondary"
                                                         style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                                                         onClick={() => activateConfig(config.id)}
                                                     >
                                                         Activate
                                                     </button>
                                                 )}
-                                                <button 
-                                                    className="btn-secondary" 
+                                                <button
+                                                    className="btn-secondary"
                                                     style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                                                     onClick={() => {
                                                         setTempConfig({ ...config });
@@ -1230,8 +1228,8 @@ export default function Dashboard() {
                                                 >
                                                     Edit
                                                 </button>
-                                                <button 
-                                                    className="btn-secondary" 
+                                                <button
+                                                    className="btn-secondary"
                                                     style={{ padding: '4px 8px', fontSize: '0.8rem', color: '#f87171', borderColor: '#7f1d1d' }}
                                                     onClick={() => deleteEvalConfig(config.id)}
                                                 >
@@ -1242,17 +1240,17 @@ export default function Dashboard() {
                                     ))}
                                 </div>
 
-                                <button 
-                                    className="btn-primary" 
+                                <button
+                                    className="btn-primary"
                                     style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '8px' }}
                                     onClick={() => {
-                                        setTempConfig({ 
-                                            id: 'new', 
-                                            name: 'New Configuration', 
-                                            provider: 'deepseek', 
-                                            model: 'deepseek-chat', 
-                                            apiKey: '', 
-                                            baseUrl: 'https://api.deepseek.com' 
+                                        setTempConfig({
+                                            id: 'new',
+                                            name: 'New Configuration',
+                                            provider: 'deepseek',
+                                            model: 'deepseek-chat',
+                                            apiKey: '',
+                                            baseUrl: 'https://api.deepseek.com'
                                         });
                                         setEditingConfigId('new');
                                         setSettingsStatus(null);
@@ -1268,43 +1266,43 @@ export default function Dashboard() {
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
                                     <h3 style={{ margin: 0, color: '#f1f5f9' }}>{editingConfigId === 'new' ? 'New Configuration' : 'Edit Configuration'}</h3>
-                                    <button 
-                                        onClick={() => setEditingConfigId(null)} 
+                                    <button
+                                        onClick={() => setEditingConfigId(null)}
                                         style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.9rem', cursor: 'pointer' }}
                                     >
                                         Back to List
                                     </button>
                                 </div>
-                                
+
                                 {/* Status Message Display */}
                                 {settingsStatus && (
-                                     <div style={{ 
-                                         padding: '10px', 
-                                         marginBottom: '1rem', 
-                                         borderRadius: '4px',
-                                         background: settingsStatus.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                                         border: `1px solid ${settingsStatus.type === 'success' ? '#4ade80' : '#f87171'}`,
-                                         color: settingsStatus.type === 'success' ? '#4ade80' : '#f87171',
-                                         fontSize: '0.9rem'
-                                     }}>
-                                         {settingsStatus.msg}
-                                     </div>
+                                    <div style={{
+                                        padding: '10px',
+                                        marginBottom: '1rem',
+                                        borderRadius: '4px',
+                                        background: settingsStatus.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                                        border: `1px solid ${settingsStatus.type === 'success' ? '#4ade80' : '#f87171'}`,
+                                        color: settingsStatus.type === 'success' ? '#4ade80' : '#f87171',
+                                        fontSize: '0.9rem'
+                                    }}>
+                                        {settingsStatus.msg}
+                                    </div>
                                 )}
 
                                 <div className="form-group">
                                     <label>Config Name</label>
-                                    <input 
+                                    <input
                                         placeholder="e.g. My DeepSeek, Company OpenAI Proxy"
                                         value={tempConfig.name || ''}
-                                        onChange={e => setTempConfig({...tempConfig, name: e.target.value})}
+                                        onChange={e => setTempConfig({ ...tempConfig, name: e.target.value })}
                                         style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
                                     />
                                 </div>
 
                                 <div className="form-group">
                                     <label>Provider</label>
-                                    <select 
-                                        value={tempConfig.provider} 
+                                    <select
+                                        value={tempConfig.provider}
                                         onChange={e => {
                                             const p = e.target.value as any;
                                             const updates: any = { provider: p };
@@ -1321,7 +1319,7 @@ export default function Dashboard() {
                                                 updates.baseUrl = 'https://api.anthropic.com/v1';
                                                 updates.model = 'claude-3-5-sonnet-20240620';
                                             }
-                                            setTempConfig({...tempConfig, ...updates});
+                                            setTempConfig({ ...tempConfig, ...updates });
                                         }}
                                         style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
                                     >
@@ -1335,14 +1333,14 @@ export default function Dashboard() {
 
                                 <div className="form-group">
                                     <label>Base URL (Optional)</label>
-                                    <input 
+                                    <input
                                         placeholder="e.g. https://api.deepseek.com or https://api.openai.com/v1"
                                         value={tempConfig.baseUrl || ''}
                                         onChange={e => {
                                             let val = e.target.value;
                                             // Normalize: strip /chat/completions or /v1 if user pasted full endpoint
                                             val = val.replace(/\/chat\/completions\/?$/, '').replace(/\/v1\/?$/, '');
-                                            setTempConfig({...tempConfig, baseUrl: val});
+                                            setTempConfig({ ...tempConfig, baseUrl: val });
                                         }}
                                         style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
                                     />
@@ -1350,29 +1348,29 @@ export default function Dashboard() {
 
                                 <div className="form-group">
                                     <label>API Key</label>
-                                    <input 
+                                    <input
                                         type="password"
                                         placeholder="sk-..."
                                         value={tempConfig.apiKey || ''}
-                                        onChange={e => setTempConfig({...tempConfig, apiKey: e.target.value})}
+                                        onChange={e => setTempConfig({ ...tempConfig, apiKey: e.target.value })}
                                         style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
                                     />
                                 </div>
 
                                 <div className="form-group">
                                     <label>Model Name</label>
-                                    <input 
+                                    <input
                                         placeholder="e.g. deepseek-chat, gpt-4o"
                                         value={tempConfig.model || ''}
-                                        onChange={e => setTempConfig({...tempConfig, model: e.target.value})}
+                                        onChange={e => setTempConfig({ ...tempConfig, model: e.target.value })}
                                         style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
                                     />
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '2rem' }}>
                                     <button className="btn-secondary" onClick={() => setEditingConfigId(null)}>Cancel</button>
-                                    <button 
-                                        className="btn-primary" 
+                                    <button
+                                        className="btn-primary"
                                         onClick={saveCurrentConfig}
                                         disabled={isSavingSettings}
                                         style={{ opacity: isSavingSettings ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -1388,7 +1386,7 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
-            
+
             {/* DASHBOARD */}
             {activeTab === 'dashboard' && (
                 <>
@@ -1454,17 +1452,17 @@ export default function Dashboard() {
                                 {allQueries.map(q => <option key={q} value={q}>{q.substring(0, 40)}</option>)}
                             </select>
                         )}
-                        
+
                         <div style={{ marginLeft: '10px', display: 'flex', gap: '8px', borderLeft: '1px solid #475569', paddingLeft: '10px' }}>
                             <span style={{ color: '#94a3b8', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>Group By:</span>
-                            <button 
+                            <button
                                 className={`tab-btn-sm ${comparisonDimension === 'framework' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('framework')}
                                 style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'framework' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'framework' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
                             >
                                 Framework
                             </button>
-                            <button 
+                            <button
                                 className={`tab-btn-sm ${comparisonDimension === 'model' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('model')}
                                 style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'model' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'model' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
@@ -1564,7 +1562,7 @@ export default function Dashboard() {
                                     yFormatter={formatTokens}
                                 />
                                 <ChartLayout
-                                    title={<span>平均准确率 <CustomTooltip content="基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。" /></span>}
+                                    title={<span>平均准确率 <CustomTooltip content={<div>基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span>}
                                     dataKey="score"
                                     unit=""
                                     data={comparisonData}
@@ -1700,7 +1698,7 @@ export default function Dashboard() {
                                     } else {
                                         relevant = relevant.filter(d => (d.model || 'Unknown') === val);
                                     }
-                                    
+
                                     if (selectedQuery) relevant = relevant.filter(d => d.query === selectedQuery);
                                     if (selectedFramework) relevant = relevant.filter(d => d.framework === selectedFramework);
 
@@ -1875,7 +1873,7 @@ export default function Dashboard() {
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>问题</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>时延 <CustomTooltip content="从请求发出到收到最终完整回复的总耗时" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Token <CustomTooltip content="输入 Prompt 与输出 Completion 的 Token 总和" /></span></th>
-                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异<br/>给出0-1分值，1表示完全正确</div>} /></span></th>
+                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异，给出0-1分值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>模型</th>
 
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>标签</th>
@@ -1886,88 +1884,88 @@ export default function Dashboard() {
                                 {currentTableData.map((row, i) => {
                                     const recordId = row.upload_id || row.task_id || '';
                                     return (
-                                     <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
-                                         <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{formatDateTime(row.timestamp)}</td>
-                                         <td className="p-2" style={{ whiteSpace: 'nowrap' }}>{row.framework}</td>
-                                         <td className="p-2" title={row.query}>{row.query.length > 30 ? row.query.substring(0, 30) + '...' : row.query}</td>
-                                         <td className="p-2">{formatLatency(row.latency)}</td>
-                                         <td className="p-2">{formatTokens(row.tokens)}</td>
-                                         <td className="p-2">
-                                             <span style={{ color: row.answer_score === null ? '#94a3b8' : ((row.answer_score || 0) > 0.8 ? '#4ade80' : '#ef4444'), fontWeight: 'bold' }}>
-                                                 {row.answer_score === null ? '评估中...' : (row.answer_score || 0).toFixed(2)}
-                                             </span>
-                                         </td>
-                                         <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{row.model || '-'}</td>
+                                        <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                                            <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{formatDateTime(row.timestamp)}</td>
+                                            <td className="p-2" style={{ whiteSpace: 'nowrap' }}>{row.framework}</td>
+                                            <td className="p-2" title={row.query}>{row.query.length > 30 ? row.query.substring(0, 30) + '...' : row.query}</td>
+                                            <td className="p-2">{formatLatency(row.latency)}</td>
+                                            <td className="p-2">{formatTokens(row.tokens)}</td>
+                                            <td className="p-2">
+                                                <span style={{ color: row.answer_score === null ? '#94a3b8' : ((row.answer_score || 0) > 0.8 ? '#4ade80' : '#ef4444'), fontWeight: 'bold' }}>
+                                                    {row.answer_score === null ? '--' : (row.answer_score || 0).toFixed(2)}
+                                                </span>
+                                            </td>
+                                            <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{row.model || '-'}</td>
 
-                                         <td className="p-2">
-                                             {editingLabelId === recordId ? (
-                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                     <input
-                                                         value={tempLabelValue}
-                                                         onChange={e => setTempLabelValue(e.target.value)}
-                                                         style={{ width: '80px', padding: '2px 4px', fontSize: '0.8rem', background: '#0f172a', border: '1px solid #334155' }}
-                                                     />
-                                                     <button onClick={() => handleUpdateLabel(row, tempLabelValue)} style={{ color: '#4ade80', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                                                     <button onClick={() => setEditingLabelId(null)} style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-                                                 </div>
-                                             ) : (
-                                                 <div
-                                                     style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
-                                                     onClick={() => {
-                                                         if (recordId) {
-                                                             setEditingLabelId(recordId);
-                                                             setTempLabelValue(row.label || '');
-                                                         }
-                                                     }}
-                                                 >
-                                                     {row.label ? <span style={{ padding: '2px 6px', background: '#334155', borderRadius: '4px', fontSize: '0.8rem' }}>{row.label}</span> : <span style={{ color: '#64748b' }}>-</span>}
-                                                     <span style={{ fontSize: '0.7rem', color: '#475569', opacity: 0.5 }}>✎</span>
-                                                 </div>
-                                             )}
-                                         </td>
-                                         <td className="p-2">
-                                             <div style={{ display: 'flex', gap: '8px', whiteSpace: 'nowrap' }}>
-                                                 <button onClick={() => window.open(`/details?framework=${encodeURIComponent(row.framework)}&query=${encodeURIComponent(row.query)}&expandTaskId=${recordId}`, '_blank')} className="btn-sm" style={{ background: '#3b82f6' }}>
-                                                     详情
-                                                 </button>
-                                                 <button 
-                                                     onClick={() => handleRejudge(row)} 
-                                                     className="btn-sm" 
-                                                     disabled={rejudgingIds.has(recordId) || row.answer_score === null}
-                                                     style={{ 
-                                                         background: (rejudgingIds.has(recordId) || row.answer_score === null) ? '#94a3b8' : '#fbbf24', 
-                                                         color: '#0f172a',
-                                                         cursor: (rejudgingIds.has(recordId) || row.answer_score === null) ? 'not-allowed' : 'pointer',
-                                                         display: 'inline-flex',
-                                                         alignItems: 'center',
-                                                         gap: '4px',
-                                                         opacity: (rejudgingIds.has(recordId) || row.answer_score === null) ? 0.7 : 1
-                                                     }}
-                                                 >
-                                                     {(rejudgingIds.has(recordId) || row.answer_score === null) ? (
-                                                         <>
-                                                             <span style={{
-                                                                 width: '12px',
-                                                                 height: '12px',
-                                                                 border: '2px solid #0f172a',
-                                                                 borderTopColor: 'transparent',
-                                                                 borderRadius: '50%',
-                                                                 animation: 'spin 1s linear infinite',
-                                                                 display: 'inline-block'
-                                                             }}></span>
-                                                             <span>评估中...</span>
-                                                         </>
-                                                     ) : (
-                                                         '重评'
-                                                     )}
-                                                 </button>
-                                                 <button onClick={() => handleDelete(row)} className="btn-sm" style={{ background: '#ef4444' }}>
-                                                     删
-                                                 </button>
-                                             </div>
-                                         </td>
-                                    </tr>
-                                );
+                                            <td className="p-2">
+                                                {editingLabelId === recordId ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <input
+                                                            value={tempLabelValue}
+                                                            onChange={e => setTempLabelValue(e.target.value)}
+                                                            style={{ width: '80px', padding: '2px 4px', fontSize: '0.8rem', background: '#0f172a', border: '1px solid #334155' }}
+                                                        />
+                                                        <button onClick={() => handleUpdateLabel(row, tempLabelValue)} style={{ color: '#4ade80', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                                                        <button onClick={() => setEditingLabelId(null)} style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                                                    </div>
+                                                ) : (
+                                                    <div
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                                                        onClick={() => {
+                                                            if (recordId) {
+                                                                setEditingLabelId(recordId);
+                                                                setTempLabelValue(row.label || '');
+                                                            }
+                                                        }}
+                                                    >
+                                                        {row.label ? <span style={{ padding: '2px 6px', background: '#334155', borderRadius: '4px', fontSize: '0.8rem' }}>{row.label}</span> : <span style={{ color: '#64748b' }}>-</span>}
+                                                        <span style={{ fontSize: '0.7rem', color: '#475569', opacity: 0.5 }}>✎</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-2">
+                                                <div style={{ display: 'flex', gap: '8px', whiteSpace: 'nowrap' }}>
+                                                    <button onClick={() => window.open(`/details?framework=${encodeURIComponent(row.framework)}&query=${encodeURIComponent(row.query)}&expandTaskId=${recordId}`, '_blank')} className="btn-sm" style={{ background: '#3b82f6' }}>
+                                                        详情
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRejudge(row)}
+                                                        className="btn-sm"
+                                                        disabled={rejudgingIds.has(recordId)}
+                                                        style={{
+                                                            background: rejudgingIds.has(recordId) ? '#94a3b8' : '#fbbf24',
+                                                            color: '#0f172a',
+                                                            cursor: rejudgingIds.has(recordId) ? 'not-allowed' : 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            opacity: rejudgingIds.has(recordId) ? 0.7 : 1
+                                                        }}
+                                                    >
+                                                        {rejudgingIds.has(recordId) ? (
+                                                            <>
+                                                                <span style={{
+                                                                    width: '12px',
+                                                                    height: '12px',
+                                                                    border: '2px solid #0f172a',
+                                                                    borderTopColor: 'transparent',
+                                                                    borderRadius: '50%',
+                                                                    animation: 'spin 1s linear infinite',
+                                                                    display: 'inline-block'
+                                                                }}></span>
+                                                                <span>评估中...</span>
+                                                            </>
+                                                        ) : (
+                                                            '重评'
+                                                        )}
+                                                    </button>
+                                                    <button onClick={() => handleDelete(row)} className="btn-sm" style={{ background: '#ef4444' }}>
+                                                        删
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
                                 })}
                             </tbody>
                         </table>
@@ -2019,26 +2017,27 @@ export default function Dashboard() {
                             </div>
                         )}
                         {Array.isArray(configs) && configs.map(c => (
-                            <div key={c.id} className="card" style={{ 
-                                padding: '14px 18px', 
-                                display: 'flex', 
+                            <div key={c.id} className="card" style={{
+                                padding: '14px 18px',
+                                display: 'flex',
                                 flexDirection: 'row',
-                                alignItems: 'center', 
+                                alignItems: 'center',
                                 gap: '16px',
                                 transition: 'border-color 0.2s',
                                 borderColor: '#1e293b'
                             }}>
                                 {/* 解析状态指示器 */}
-                                <div style={{ flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%', 
+                                <div style={{
+                                    flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%',
                                     background: c.parse_status === 'parsing' ? '#fbbf24' : c.parse_status === 'failed' ? '#ef4444' : '#4ade80',
                                     boxShadow: `0 0 6px ${c.parse_status === 'parsing' ? '#fbbf2444' : c.parse_status === 'failed' ? '#ef444444' : '#4ade8044'}`,
                                     ...(c.parse_status === 'parsing' ? { animation: 'pulse-dot 1.5s ease-in-out infinite' } : {})
                                 }} />
                                 {/* 内容区 */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ 
-                                        fontWeight: 500, 
-                                        color: '#e2e8f0', 
+                                    <div style={{
+                                        fontWeight: 500,
+                                        color: '#e2e8f0',
                                         fontSize: '0.9rem',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -2047,8 +2046,8 @@ export default function Dashboard() {
                                     }}>
                                         {c.query}
                                     </div>
-                                    <div style={{ 
-                                        color: '#64748b', 
+                                    <div style={{
+                                        color: '#64748b',
                                         fontSize: '0.8rem',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -2060,7 +2059,7 @@ export default function Dashboard() {
                                 {/* 状态标签 */}
                                 <div style={{ flexShrink: 0 }}>
                                     {c.parse_status === 'parsing' ? (
-                                        <span style={{ 
+                                        <span style={{
                                             display: 'inline-flex', alignItems: 'center', gap: '5px',
                                             padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500,
                                             background: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.25)'
@@ -2069,12 +2068,12 @@ export default function Dashboard() {
                                             解析中
                                         </span>
                                     ) : c.parse_status === 'failed' ? (
-                                        <span style={{ 
+                                        <span style={{
                                             padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500,
                                             background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)'
                                         }}>✕ 失败</span>
                                     ) : (
-                                        <span style={{ 
+                                        <span style={{
                                             padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500,
                                             background: 'rgba(74, 222, 128, 0.12)', color: '#4ade80', border: '1px solid rgba(74, 222, 128, 0.25)'
                                         }}>✓ 完成</span>
@@ -2158,16 +2157,16 @@ export default function Dashboard() {
                 <div className="modal-overlay" onClick={() => setIsEditModalOpen(false)}>
                     <div className="modal-content card" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto', maxWidth: '900px', width: '66vw', minWidth: '500px', flexDirection: 'column' }}>
                         <h3>{editingConfig.id ? '数据项详情' : '新增数据项'}</h3>
-                        
+
                         {/* 问题 - 始终突出显示 */}
                         <div className="form-group">
                             <label style={{ fontWeight: 600, fontSize: '0.95rem', color: '#e2e8f0' }}>问题 (Query) <span style={{ color: '#ef4444' }}>*</span></label>
-                            <textarea 
-                                value={editingConfig.query || ''} 
-                                onChange={e => setEditingConfig({ ...editingConfig, query: e.target.value })} 
+                            <textarea
+                                value={editingConfig.query || ''}
+                                onChange={e => setEditingConfig({ ...editingConfig, query: e.target.value })}
                                 disabled={!!editingConfig.id}
                                 placeholder="请输入需要评估的问题..."
-                                style={{ width: '100%', padding: '10px', minHeight: '60px', opacity: editingConfig.id ? 0.7 : 1, cursor: editingConfig.id ? 'not-allowed' : 'text', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.95rem' }} 
+                                style={{ width: '100%', padding: '10px', minHeight: '60px', opacity: editingConfig.id ? 0.7 : 1, cursor: editingConfig.id ? 'not-allowed' : 'text', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.95rem' }}
                             />
                         </div>
 
@@ -2220,33 +2219,33 @@ export default function Dashboard() {
                                             style={{ width: '100%', padding: '10px', minHeight: '150px', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.9rem' }}
                                         />
                                     ) : (
-                                        <div style={{ 
-                                            border: '2px dashed #334155', 
-                                            borderRadius: '8px', 
-                                            padding: '2rem', 
+                                        <div style={{
+                                            border: '2px dashed #334155',
+                                            borderRadius: '8px',
+                                            padding: '2rem',
                                             textAlign: 'center',
                                             background: '#0f172a',
                                             cursor: 'pointer',
                                             transition: 'border-color 0.2s'
                                         }}
-                                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#38bdf8'; }}
-                                        onDragLeave={e => { e.currentTarget.style.borderColor = '#334155'; }}
-                                        onDrop={e => {
-                                            e.preventDefault();
-                                            e.currentTarget.style.borderColor = '#334155';
-                                            const file = e.dataTransfer.files[0];
-                                            if (file) setConfigDocumentFile(file);
-                                        }}
-                                        onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'file';
-                                            input.accept = '.txt,.md,.markdown,.pdf';
-                                            input.onchange = (e: any) => {
-                                                const file = e.target.files[0];
+                                            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#38bdf8'; }}
+                                            onDragLeave={e => { e.currentTarget.style.borderColor = '#334155'; }}
+                                            onDrop={e => {
+                                                e.preventDefault();
+                                                e.currentTarget.style.borderColor = '#334155';
+                                                const file = e.dataTransfer.files[0];
                                                 if (file) setConfigDocumentFile(file);
-                                            };
-                                            input.click();
-                                        }}
+                                            }}
+                                            onClick={() => {
+                                                const input = document.createElement('input');
+                                                input.type = 'file';
+                                                input.accept = '.txt,.md,.markdown,.pdf';
+                                                input.onchange = (e: any) => {
+                                                    const file = e.target.files[0];
+                                                    if (file) setConfigDocumentFile(file);
+                                                };
+                                                input.click();
+                                            }}
                                         >
                                             {configDocumentFile ? (
                                                 <div>
@@ -2281,19 +2280,19 @@ export default function Dashboard() {
                                 {/* 标准答案 - 突出显示 */}
                                 <div className="form-group">
                                     <label style={{ fontWeight: 600, fontSize: '0.95rem', color: '#e2e8f0' }}>标准答案</label>
-                                    <textarea 
-                                        value={editingConfig.standard_answer || ''} 
-                                        onChange={e => setEditingConfig({ ...editingConfig, standard_answer: e.target.value })} 
-                                        style={{ width: '100%', padding: '10px', minHeight: '120px', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.9rem' }} 
+                                    <textarea
+                                        value={editingConfig.standard_answer || ''}
+                                        onChange={e => setEditingConfig({ ...editingConfig, standard_answer: e.target.value })}
+                                        style={{ width: '100%', padding: '10px', minHeight: '120px', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.9rem' }}
                                     />
                                 </div>
 
                                 {/* 关键观点 - 默认折叠 */}
                                 <details style={{ marginBottom: '1rem' }}>
-                                    <summary style={{ 
-                                        cursor: 'pointer', 
-                                        color: '#94a3b8', 
-                                        fontSize: '0.9rem', 
+                                    <summary style={{
+                                        cursor: 'pointer',
+                                        color: '#94a3b8',
+                                        fontSize: '0.9rem',
                                         padding: '10px 12px',
                                         userSelect: 'none',
                                         display: 'flex',
@@ -2364,10 +2363,10 @@ export default function Dashboard() {
 
                                 {/* 关键动作 - 默认折叠 */}
                                 <details style={{ marginBottom: '1rem' }}>
-                                    <summary style={{ 
-                                        cursor: 'pointer', 
-                                        color: '#94a3b8', 
-                                        fontSize: '0.9rem', 
+                                    <summary style={{
+                                        cursor: 'pointer',
+                                        color: '#94a3b8',
+                                        fontSize: '0.9rem',
                                         padding: '10px 12px',
                                         userSelect: 'none',
                                         display: 'flex',
@@ -2437,9 +2436,9 @@ export default function Dashboard() {
                                 </details>
                             </>
                         )}
-                        
+
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                            <button 
+                            <button
                                 onClick={() => { setIsEditModalOpen(false); setIsSavingConfig(false); }}
                                 style={{
                                     padding: '8px 24px',
@@ -2455,8 +2454,8 @@ export default function Dashboard() {
                             >
                                 取消
                             </button>
-                            <button 
-                                onClick={saveConfig} 
+                            <button
+                                onClick={saveConfig}
                                 disabled={isSavingConfig}
                                 style={{
                                     padding: '8px 28px',
@@ -2521,8 +2520,8 @@ export default function Dashboard() {
                             <h4>评估结果</h4>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.5rem' }}>
                                 <div className={`status-box ${selectedRecord.answer_score === null ? 'warning' : ((selectedRecord.answer_score || 0) > 0.8 ? 'good' : 'bad')}`}
-                                     style={selectedRecord.answer_score === null ? { borderLeft: '4px solid #94a3b8', background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8' } : {}}>
-                                    <strong>回答评分:</strong> {selectedRecord.answer_score === null ? '评估中...' : (selectedRecord.answer_score || 0).toFixed(2)}
+                                    style={selectedRecord.answer_score === null ? { borderLeft: '4px solid #94a3b8', background: 'rgba(148, 163, 184, 0.1)', color: '#94a3b8' } : {}}>
+                                    <strong>回答评分:</strong> {selectedRecord.answer_score === null ? '--' : (selectedRecord.answer_score || 0).toFixed(2)}
                                 </div>
                             </div>
 
@@ -2548,19 +2547,19 @@ export default function Dashboard() {
                                                         <strong style={{ color: '#94a3b8' }}>修复建议:</strong> {fail.recovery}
                                                     </div>
                                                 )}
-                                                
+
                                                 {/* Attribution Display */}
                                                 {(fail.attribution || fail.attribution_reason) && (
                                                     <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed #7f1d1d' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
                                                             <strong style={{ color: '#fbbf24' }}>归因分析:</strong>
                                                             {fail.attribution && (
-                                                                <span style={{ 
-                                                                    background: '#fbbf24', 
-                                                                    color: '#451a03', 
-                                                                    padding: '1px 6px', 
-                                                                    borderRadius: '4px', 
-                                                                    fontSize: '0.75rem', 
+                                                                <span style={{
+                                                                    background: '#fbbf24',
+                                                                    color: '#451a03',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.75rem',
                                                                     fontWeight: 'bold',
                                                                     border: '1px solid #d97706'
                                                                 }}>
@@ -2647,7 +2646,7 @@ export default function Dashboard() {
                 style={{
                     position: 'fixed',
                     top: '1.5rem',
-                    right: '2rem', 
+                    right: '2rem',
                     width: '3rem',
                     height: '3rem',
                     borderRadius: '50%',
@@ -2674,13 +2673,13 @@ export default function Dashboard() {
             {showUserModal && (
                 <div className="modal-overlay" onClick={() => setShowUserModal(false)} style={{ alignItems: 'flex-start', paddingTop: '10vh' }}>
                     <div className="modal-content" style={{ width: '500px', maxWidth: '90vw', background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '0', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-                        
+
                         {/* Modal Header */}
                         <div style={{ padding: '1.5rem', background: 'linear-gradient(to right, #1e293b, #0f172a)', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ 
-                                    width: '40px', height: '40px', borderRadius: '50%', background: '#38bdf8', color: '#0f172a', 
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold' 
+                                <div style={{
+                                    width: '40px', height: '40px', borderRadius: '50%', background: '#38bdf8', color: '#0f172a',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold'
                                 }}>
                                     {user ? user.substring(0, 1).toUpperCase() : '?'}
                                 </div>
@@ -2694,21 +2693,21 @@ export default function Dashboard() {
 
                         {/* Modal Body */}
                         <div style={{ padding: '1.5rem' }}>
-                            
+
                             {/* Stats or Info could go here */}
-                            
+
                             {localApiKey ? (
                                 <div className="form-group" style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '8px', border: '1px solid #334155' }}>
                                     <label style={{ color: '#94a3b8', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.75rem', display: 'block' }}>API Key</label>
                                     <div style={{ display: 'flex', gap: '10px' }}>
-                                        <div style={{ 
-                                            flex: 1, padding: '0.75rem 1rem', background: '#0f172a', borderRadius: '6px', 
+                                        <div style={{
+                                            flex: 1, padding: '0.75rem 1rem', background: '#0f172a', borderRadius: '6px',
                                             border: '1px solid #334155', color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.9rem',
-                                            overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' 
+                                            overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis'
                                         }}>
                                             {localApiKey}
                                         </div>
-                                        <button 
+                                        <button
                                             className="btn-primary"
                                             onClick={() => {
                                                 const textToCopy = localApiKey;
@@ -2739,12 +2738,12 @@ export default function Dashboard() {
                                                     document.body.removeChild(textArea);
                                                 }
                                             }}
-                                            style={{ 
-                                                padding: '0 1.25rem', 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
+                                            style={{
+                                                padding: '0 1.25rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
                                                 gap: '6px',
-                                                background: copiedApiKey ? '#4ade80' : undefined 
+                                                background: copiedApiKey ? '#4ade80' : undefined
                                             }}
                                         >
                                             {copiedApiKey ? (
@@ -2760,7 +2759,7 @@ export default function Dashboard() {
                                     </div>
                                     <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#bae6fd', lineHeight: 1.5 }}>
-                                            <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br/>
+                                            <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br />
                                             <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export WITTY_INSIGHT_API_KEY={localApiKey}</code>
                                         </p>
                                     </div>
@@ -2775,33 +2774,33 @@ export default function Dashboard() {
 
                         {/* Modal Footer */}
                         <div style={{ padding: '1.25rem 1.5rem', background: '#0f172a', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                             <button 
+                            <button
                                 onClick={() => setShowUserModal(false)}
-                                style={{ 
-                                    background: 'transparent', 
-                                    border: '1px solid #334155', 
-                                    color: '#94a3b8', 
-                                    padding: '0.6rem 1.25rem', 
-                                    borderRadius: '6px', 
-                                    fontWeight: '500', 
-                                    cursor: 'pointer' 
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid #334155',
+                                    color: '#94a3b8',
+                                    padding: '0.6rem 1.25rem',
+                                    borderRadius: '6px',
+                                    fontWeight: '500',
+                                    cursor: 'pointer'
                                 }}
                             >
                                 Close
                             </button>
-                            <button 
+                            <button
                                 onClick={() => {
                                     localStorage.removeItem('user_id');
                                     localStorage.removeItem('api_key');
                                     window.location.reload();
                                 }}
-                                style={{ 
-                                    background: '#ef4444', 
-                                    border: 'none', 
-                                    color: 'white', 
-                                    padding: '0.6rem 1.25rem', 
-                                    borderRadius: '6px', 
-                                    fontWeight: '600', 
+                                style={{
+                                    background: '#ef4444',
+                                    border: 'none',
+                                    color: 'white',
+                                    padding: '0.6rem 1.25rem',
+                                    borderRadius: '6px',
+                                    fontWeight: '600',
                                     cursor: 'pointer',
                                     boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)'
                                 }}
@@ -2812,7 +2811,7 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
-            
+
 
 
             {/* User Modal */}

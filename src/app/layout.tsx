@@ -8,8 +8,6 @@ export const metadata: Metadata = {
 
 import { Providers } from "@/components/providers";
 
-// ...
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -17,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>
+      <body suppressHydrationWarning>
         <Providers>
           {children}
         </Providers>
