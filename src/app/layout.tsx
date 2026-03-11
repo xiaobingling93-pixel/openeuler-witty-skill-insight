@@ -8,8 +8,6 @@ export const metadata: Metadata = {
 
 import { Providers } from "@/components/providers";
 
-// ...
-
 export default function RootLayout({
   children,
 }: Readonly<{

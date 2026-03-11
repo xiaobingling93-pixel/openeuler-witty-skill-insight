@@ -687,7 +687,6 @@ function DetailPage() {
         }
     }, [expandTaskId]);
 
-
     // Fetch executions list
     useEffect(() => {
         fetch('/api/data', { cache: 'no-store' })

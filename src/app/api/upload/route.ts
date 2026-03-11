@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
     console.log(`[Upload-API] 📥 Received data from ${data.framework || 'unknown'}: task_id=${data.task_id}, query=${data.query?.substring(0, 50)}..., user=${username || '(none)'}`);
     
-    let interactions = data.interactions || [];
+    const interactions = data.interactions || [];
     const normalized = normalizeInteractions(interactions);
     
     normalized.forEach((turn, idx) => {
@@ -147,7 +147,7 @@ async function processUploadAsync(data: any, username: any, normalized: any, int
     }
 
     if (data.query && data.final_result) {
-        let criteria: any = { skill_definition: skillDef };
+        const criteria: any = { skill_definition: skillDef };
         let cfg = undefined;
         try {
             const configs = await readConfig(username);

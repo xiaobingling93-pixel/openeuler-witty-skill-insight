@@ -64,7 +64,7 @@ export class ClaudeParser {
     let firstUserMsg = "";
     let lastAssistantMsg = "";
     let model = "";
-    let cwd = entries.find(e => e.cwd)?.cwd || "";
+    const cwd = entries.find(e => e.cwd)?.cwd || "";
     let totalTokens = 0;
     let totalActiveLatencyMs = 0;
     const skills = new Set<string>();

@@ -56,7 +56,7 @@ export async function POST(
   headers.delete('content-length');
   
   const activeConfig = await getActiveConfig();
-  let apiKey = activeConfig?.apiKey;
+  const apiKey = activeConfig?.apiKey;
 
   try {
         const session = await getSession(taskId);
@@ -87,7 +87,7 @@ export async function POST(
   }
 
   const startTime = Date.now();
-  let interactionData: any = {
+  const interactionData: any = {
       requestMessages: body.messages || [],
       responseMessage: { role: 'assistant', content: '' },
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },

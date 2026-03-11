@@ -50,12 +50,13 @@ export async function POST(request: Request) {
          }
     }
 
-    let criteria: any = { skill_definition: skillDef };
+    const criteria: any = { skill_definition: skillDef };
     const configs = await readConfig(actionUser);
     const query = existingRecord.query || '';
     const cfg = configs.find((c: any) => c.query && query && c.query.trim() === query.trim());
     
     if (!cfg) {
+        console.warn(`[Rejudge] No matching evaluation configuration found for query: ${query}`);
         return NextResponse.json({ 
             error: 'No matching evaluation configuration found for this query. Please ensure a valid configuration exists before re-judging.' 
         }, { status: 400 });
@@ -68,18 +69,19 @@ export async function POST(request: Request) {
     }
 
     const judgment = await judgeAnswer(query, criteria, existingRecord.finalResult || '', actionUser);
+    const score = typeof judgment?.score === 'number' ? judgment.score : 0;
     
-    if (judgment.score === 0 && (judgment.reason?.includes('failed') || judgment.reason?.includes('disabled') || judgment.reason?.includes('禁用'))) {
-         return NextResponse.json({ 
-             error: `Judgment failed: ${judgment.reason}` 
-         }, { status: 500 });
+    if (score === 0 && (judgment.reason?.includes('failed') || judgment.reason?.includes('disabled') || judgment.reason?.includes('禁用'))) {
+          return NextResponse.json({ 
+              error: `Judgment failed: ${judgment.reason}` 
+          }, { status: 500 });
     }
     
     const failureAnalysis = await analyzeFailures(
         normalized,
         skillName,
         skillDef,
-        judgment.score,
+        score,
         judgment.reason || '',
         query,
         existingRecord.finalResult || '',
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
         skills: skills,
         skill: skillName,
         skill_version: skillVersion,
-        answer_score: judgment.score,
+        answer_score: score,
         is_answer_correct: judgment.is_correct,
         judgment_reason: judgment.reason || 'Rejudged',
         failures: failureAnalysis.failures,
