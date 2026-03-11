@@ -1563,13 +1563,13 @@ export default function Dashboard() {
                                     frameworks={comparisonSeries}
                                     yFormatter={formatTokens}
                                 />
-                                <ChartLayout
-                                    title={<span>平均准确率 <CustomTooltip content="基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。" /></span>}
-                                    dataKey="score"
-                                    unit=""
-                                    data={comparisonData}
-                                    frameworks={comparisonSeries}
-                                />
+                                 <ChartLayout
+                                     title={<span>平均准确率 <CustomTooltip content={<div>基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。<br/>"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span>}
+                                     dataKey="score"
+                                     unit=""
+                                     data={comparisonData}
+                                     frameworks={comparisonSeries}
+                                 />
                             </div>
                         ) : (
                             <div className="card" style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>无数据</div>
@@ -1875,7 +1875,7 @@ export default function Dashboard() {
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>问题</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>时延 <CustomTooltip content="从请求发出到收到最终完整回复的总耗时" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Token <CustomTooltip content="输入 Prompt 与输出 Completion 的 Token 总和" /></span></th>
-                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异<br/>给出0-1分值，1表示完全正确</div>} /></span></th>
+                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异，给出0-1分值，1表示完全正确。<br/>"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>模型</th>
 
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>标签</th>
@@ -1930,36 +1930,36 @@ export default function Dashboard() {
                                                  <button onClick={() => window.open(`/details?framework=${encodeURIComponent(row.framework)}&query=${encodeURIComponent(row.query)}&expandTaskId=${recordId}`, '_blank')} className="btn-sm" style={{ background: '#3b82f6' }}>
                                                      详情
                                                  </button>
-                                                 <button 
-                                                     onClick={() => handleRejudge(row)} 
-                                                     className="btn-sm" 
-                                                     disabled={rejudgingIds.has(recordId) || row.answer_score === null}
-                                                     style={{ 
-                                                         background: (rejudgingIds.has(recordId) || row.answer_score === null) ? '#94a3b8' : '#fbbf24', 
-                                                         color: '#0f172a',
-                                                         cursor: (rejudgingIds.has(recordId) || row.answer_score === null) ? 'not-allowed' : 'pointer',
-                                                         display: 'inline-flex',
-                                                         alignItems: 'center',
-                                                         gap: '4px',
-                                                         opacity: (rejudgingIds.has(recordId) || row.answer_score === null) ? 0.7 : 1
-                                                     }}
-                                                 >
-                                                     {(rejudgingIds.has(recordId) || row.answer_score === null) ? (
-                                                         <>
-                                                             <span style={{
-                                                                 width: '12px',
-                                                                 height: '12px',
-                                                                 border: '2px solid #0f172a',
-                                                                 borderTopColor: 'transparent',
-                                                                 borderRadius: '50%',
-                                                                 animation: 'spin 1s linear infinite',
-                                                                 display: 'inline-block'
-                                                             }}></span>
-                                                             <span>评估中...</span>
-                                                         </>
-                                                     ) : (
-                                                         '重评'
-                                                     )}
+                                                  <button
+                                                      onClick={() => handleRejudge(row)}
+                                                      className="btn-sm"
+                                                      disabled={rejudgingIds.has(recordId)}
+                                                      style={{
+                                                          background: rejudgingIds.has(recordId) ? '#94a3b8' : '#fbbf24',
+                                                          color: '#0f172a',
+                                                          cursor: rejudgingIds.has(recordId) ? 'not-allowed' : 'pointer',
+                                                          display: 'inline-flex',
+                                                          alignItems: 'center',
+                                                          gap: '4px',
+                                                          opacity: rejudgingIds.has(recordId) ? 0.7 : 1
+                                                      }}
+                                                  >
+                                                      {rejudgingIds.has(recordId) ? (
+                                                          <>
+                                                              <span style={{
+                                                                  width: '12px',
+                                                                  height: '12px',
+                                                                  border: '2px solid #0f172a',
+                                                                  borderTopColor: 'transparent',
+                                                                  borderRadius: '50%',
+                                                                  animation: 'spin 1s linear infinite',
+                                                                  display: 'inline-block'
+                                                              }}></span>
+                                                              <span>评估中...</span>
+                                                          </>
+                                                      ) : (
+                                                          '重评'
+                                                      )}
                                                  </button>
                                                  <button onClick={() => handleDelete(row)} className="btn-sm" style={{ background: '#ef4444' }}>
                                                      删
