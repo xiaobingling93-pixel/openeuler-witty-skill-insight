@@ -2,11 +2,12 @@ import { OpenAI } from "openai";
 import { getProxyConfig } from './proxy-config';
 import { getActiveConfig } from './server-config';
 import { db } from './prisma';
-import { generateFlowParsePrompt, generateExecutionMatchPrompt } from '@/prompts/flow-parse-prompt';
+import { generateFlowParsePrompt, generateExecutionMatchPrompt, generateStepExtractPrompt } from '@/prompts/flow-parse-prompt';
 import fs from 'fs';
 import path from 'path';
 
 const LOG_FILE = path.join(process.cwd(), 'data', 'flow_debug.jsonl');
+const BATCH_SIZE = 10;
 
 interface LogInput {
   skillId?: string;
@@ -95,10 +96,24 @@ export interface MatchSummary {
   overallScore: number;
 }
 
+export interface ProblemStep {
+  stepIndex: number;
+  stepName: string;
+  status: 'partial' | 'unexpected' | 'skipped';
+  problem: string;
+  suggestion: string;
+}
+
+export interface SkippedExpectedStep {
+  expectedStepId: string;
+  expectedStepName: string;
+}
+
 export interface ExecutionMatchResult {
   matches: StepMatch[];
+  skippedExpectedSteps: SkippedExpectedStep[];
   summary: MatchSummary;
-  analysis: string;
+  problemSteps: ProblemStep[];
 }
 
 export async function parseSkillFlow(
@@ -233,7 +248,8 @@ export function generateMermaidCode(flow: ParsedFlowResult): string {
 
 export function generateDynamicMermaidCode(
   flow: ParsedFlowResult,
-  matches: StepMatch[]
+  matches: StepMatch[],
+  skippedExpectedSteps: SkippedExpectedStep[]
 ): string {
   const lines: string[] = ['flowchart LR'];
   
@@ -244,7 +260,7 @@ export function generateDynamicMermaidCode(
     'skipped': '#94a3b8'
   };
 
-  lines.push('    subgraph 静态预期流程');
+  lines.push('    subgraph Skill流程');
   lines.push('        direction LR');
   
   flow.steps.forEach((step, index) => {
@@ -267,19 +283,22 @@ export function generateDynamicMermaidCode(
   lines.push('    subgraph 实际执行轨迹');
   lines.push('        direction LR');
   
-  const actualSteps: { id: string; label: string; status: string; targetStep?: string }[] = [];
+  const actualSteps: { id: string; label: string; status: string; targetStep?: string; dialogIndex: number }[] = [];
   
-  const sortedMatches = [...matches].sort((a, b) => a.actualStepIndex - b.actualStepIndex);
+  const validMatches = matches.filter(m => m.matchStatus !== 'skipped');
+  const sortedMatches = [...validMatches].sort((a, b) => a.actualStepIndex - b.actualStepIndex);
   
   sortedMatches.forEach((match, idx) => {
     const nodeId = `A${idx + 1}`;
     const status = match.matchStatus;
-    const label = sanitizeMermaidLabel(`${idx + 1}. ${match.actualAction.substring(0, 20)}`);
+    const dialogIndex = match.actualStepIndex;
+    const label = sanitizeMermaidLabel(`#${dialogIndex} ${match.actualAction}`);
     actualSteps.push({
       id: nodeId,
       label,
       status,
-      targetStep: match.expectedStepId
+      targetStep: match.expectedStepId,
+      dialogIndex
     });
     
     lines.push(`        ${nodeId}[${label}]`);
@@ -298,8 +317,7 @@ export function generateDynamicMermaidCode(
       const targetIndex = flow.steps.findIndex(s => s.id === step.targetStep);
       if (targetIndex !== -1) {
         const targetNode = `S${targetIndex + 1}`;
-        const linkStyle = step.status === 'matched' ? '-.->' : '-->';
-        lines.push(`    ${targetNode} ${linkStyle} ${step.id}`);
+        lines.push(`    ${targetNode} -.- ${step.id}`);
       }
     }
   });
@@ -307,8 +325,18 @@ export function generateDynamicMermaidCode(
   lines.push('');
   flow.steps.forEach((step, index) => {
     const nodeId = `S${index + 1}`;
-    const match = matches.find(m => m.expectedStepId === step.id);
-    const status = match?.matchStatus || 'skipped';
+    const isSkipped = skippedExpectedSteps.some(s => s.expectedStepId === step.id);
+    const partialMatch = matches.find(m => m.expectedStepId === step.id && m.matchStatus === 'partial');
+    
+    let status: string;
+    if (isSkipped) {
+      status = 'skipped';
+    } else if (partialMatch) {
+      status = 'partial';
+    } else {
+      status = 'matched';
+    }
+    
     const color = statusColor[status];
     lines.push(`    style ${nodeId} fill:${color},color:#0f172a`);
   });
@@ -367,41 +395,18 @@ export async function analyzeExecutionMatch(
 
     const interactionCount = Array.isArray(interactions) ? interactions.length : 0;
     
-    const interactionSummary = summarizeInteractions(interactions);
-    
     const flow: ParsedFlowResult = JSON.parse(parsedFlow.flowJson);
     
-    const prompt = generateExecutionMatchPrompt(flow, interactionSummary, skillId);
+    // 阶段1: 分批并行提取步骤
+    const allExtractedSteps = await extractStepsInBatches(client, model, interactions);
     
-    const response = await client.chat.completions.create({
-      messages: [{ role: "user", content: prompt }],
-      model: model,
-      temperature: 0.3
-    });
-
-    const content = response.choices?.[0]?.message?.content;
+    // 阶段2: 直接合并（不去重）
+    const mergedSteps = mergeSteps(allExtractedSteps);
     
-    if (!content) {
-      return { success: false, error: "LLM 返回内容为空" };
-    }
-
-    appendLog('execution_match', { executionId, skillId }, { raw_output: content });
-
-    let jsonStr = content.trim();
-    const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (match) {
-      jsonStr = match[1];
-    } else {
-      const first = jsonStr.indexOf('{');
-      const last = jsonStr.lastIndexOf('}');
-      if (first !== -1 && last !== -1 && last >= first) {
-        jsonStr = jsonStr.substring(first, last + 1);
-      }
-    }
-
-    const result: ExecutionMatchResult = JSON.parse(jsonStr);
+    // 阶段3: 统一匹配
+    const result = await matchStepsWithFlow(client, model, flow, mergedSteps, skillId);
     
-    const dynamicMermaid = generateDynamicMermaidCode(flow, result.matches);
+    const dynamicMermaid = generateDynamicMermaidCode(flow, result.matches, result.skippedExpectedSteps);
 
     await db.upsertExecutionMatch({
       executionId,
@@ -412,7 +417,7 @@ export async function analyzeExecutionMatch(
       matchJson: JSON.stringify(result),
       staticMermaid: parsedFlow.mermaidCode,
       dynamicMermaid,
-      analysisText: result.analysis,
+      analysisText: JSON.stringify(result.problemSteps),
       interactionCount
     });
 
@@ -429,6 +434,136 @@ export async function analyzeExecutionMatch(
     console.error("Execution match error:", error);
     return { success: false, error: message };
   }
+}
+
+async function extractStepsInBatches(
+  client: OpenAI,
+  model: string,
+  interactions: InteractionMessage[]
+): Promise<ExtractedStep[]> {
+  if (!Array.isArray(interactions) || interactions.length === 0) {
+    return [];
+  }
+
+  const batches: InteractionMessage[][] = [];
+  for (let i = 0; i < interactions.length; i += BATCH_SIZE) {
+    batches.push(interactions.slice(i, i + BATCH_SIZE));
+  }
+
+  const batchPromises = batches.map(async (batch, batchIndex) => {
+    const startIndex = batchIndex * BATCH_SIZE;
+    const batchSummary = summarizeBatch(batch, startIndex);
+    const prompt = generateStepExtractPrompt(batchSummary, batchIndex, startIndex);
+    
+    try {
+      const response = await client.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: model,
+        temperature: 0.3
+      });
+
+      const content = response.choices?.[0]?.message?.content;
+      if (!content) return [];
+
+      let jsonStr = content.trim();
+      const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (match) {
+        jsonStr = match[1];
+      } else {
+        const first = jsonStr.indexOf('{');
+        const last = jsonStr.lastIndexOf('}');
+        if (first !== -1 && last !== -1 && last >= first) {
+          jsonStr = jsonStr.substring(first, last + 1);
+        }
+      }
+
+      const result: BatchExtractResult = JSON.parse(jsonStr);
+      return result.steps || [];
+    } catch (e) {
+      console.error(`Batch ${batchIndex} extract error:`, e);
+      return [];
+    }
+  });
+
+  const results = await Promise.all(batchPromises);
+  return results.flat();
+}
+
+function summarizeBatch(batch: InteractionMessage[], startIndex: number): string {
+  const summaries: string[] = [];
+  
+  batch.forEach((interaction, idx) => {
+    const globalIndex = startIndex + idx;
+    const role = interaction.role || 'unknown';
+    
+    let content = '';
+    if (typeof interaction.content === 'string') {
+      content = interaction.content.substring(0, 300);
+    } else if (Array.isArray(interaction.content)) {
+      const textParts = interaction.content
+        .filter((c: InteractionContent) => c.type === 'text')
+        .map((c: InteractionContent) => c.text || '')
+        .join(' ');
+      content = textParts.substring(0, 300);
+      
+      const toolCalls = interaction.content.filter((c: InteractionContent) => 
+        c.type === 'toolCall' || c.type === 'tool_use'
+      );
+      if (toolCalls.length > 0) {
+        content += ` [工具调用: ${toolCalls.map((t: InteractionContent) => t.name).join(', ')}]`;
+      }
+    }
+    
+    summaries.push(`[${globalIndex}] ${role.toUpperCase()}: ${content}${content.length >= 300 ? '...' : ''}`);
+  });
+
+  return summaries.join('\n');
+}
+
+function mergeSteps(steps: ExtractedStep[]): ExtractedStep[] {
+  if (steps.length === 0) {
+    return [];
+  }
+
+  return [...steps].sort((a, b) => a.dialogStartIndex - b.dialogStartIndex);
+}
+
+async function matchStepsWithFlow(
+  client: OpenAI,
+  model: string,
+  flow: ParsedFlowResult,
+  steps: ExtractedStep[],
+  skillId: string
+): Promise<ExecutionMatchResult> {
+  const stepsJson = JSON.stringify(steps, null, 2);
+  const prompt = generateExecutionMatchPrompt(flow, stepsJson, skillId);
+
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: prompt }],
+    model: model,
+    temperature: 0.3
+  });
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("LLM 返回内容为空");
+  }
+
+  appendLog('execution_match', { skillId }, { raw_output: content });
+
+  let jsonStr = content.trim();
+  const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (match) {
+    jsonStr = match[1];
+  } else {
+    const first = jsonStr.indexOf('{');
+    const last = jsonStr.lastIndexOf('}');
+    if (first !== -1 && last !== -1 && last >= first) {
+      jsonStr = jsonStr.substring(first, last + 1);
+    }
+  }
+
+  return JSON.parse(jsonStr);
 }
 
 function summarizeInteractions(interactions: InteractionMessage[]): string {
@@ -478,6 +613,18 @@ interface DynamicStep {
   id: string;
   name: string;
   type: 'action' | 'decision' | 'output';
+}
+
+interface ExtractedStep {
+  name: string;
+  description: string;
+  dialogStartIndex: number;
+  dialogEndIndex: number;
+  type: 'action' | 'decision' | 'output';
+}
+
+interface BatchExtractResult {
+  steps: ExtractedStep[];
 }
 
 interface DynamicAnalysisResult {

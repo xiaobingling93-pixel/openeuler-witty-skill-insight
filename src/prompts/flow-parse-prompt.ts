@@ -69,9 +69,51 @@ interface ParsedFlow {
   summary?: string;
 }
 
+export function generateStepExtractPrompt(
+  interactions: string,
+  batchIndex: number,
+  startIndex: number
+): string {
+  return `
+你是一个专家，擅长分析 Agent 执行轨迹并提取执行步骤。
+
+这是第 ${batchIndex + 1} 批对话数据（对话序号从 ${startIndex} 开始）：
+---
+${interactions}
+---
+
+你的任务是：
+1. 分析这批对话，提取实际执行的步骤
+2. 为每个步骤命名（简洁的中文描述）
+3. 记录每个步骤对应的对话序号范围
+
+请只用 JSON 对象回复，格式如下：
+{
+  "steps": [
+    {
+      "name": "简短的步骤名称（2-6个中文字）",
+      "description": "这个步骤做了什么",
+      "dialogStartIndex": 0,
+      "dialogEndIndex": 2,
+      "type": "action"
+    }
+  ]
+}
+
+指南：
+- "name" 必须简洁（2-6个中文字），用于在流程图中显示
+- "dialogStartIndex" 和 "dialogEndIndex" 是这批对话中的相对序号（从 ${startIndex} 开始）
+- "type" 可以是: "action"（做某事）, "decision"（做出选择）, "output"（产生结果）
+- 合并相似的连续操作为一个步骤
+- 忽略无关的闲聊或重复内容
+- 如果这批对话没有有效步骤，返回空数组 {"steps": []}
+- 提取所有有效步骤，不要限制数量
+`;
+}
+
 export function generateExecutionMatchPrompt(
   expectedFlow: ParsedFlow,
-  actualInteractions: string,
+  actualSteps: string,
   skillName: string
 ): string {
   return `
@@ -82,16 +124,16 @@ Skill "${skillName}" 的预期流程：
 ${JSON.stringify(expectedFlow, null, 2)}
 ---
 
-实际执行轨迹：
+实际执行步骤：
 ---
-${actualInteractions}
+${actualSteps}
 ---
 
 你的任务是：
-1. 将每个实际执行步骤与预期流程匹配
-2. 识别匹配、部分匹配或意外的步骤
-3. 检查执行顺序是否正确
-4. 提供整体分析
+1. 为每个实际执行步骤生成一条匹配记录（放在 matches 数组）
+2. 将实际步骤与预期流程匹配，或标记为意外步骤
+3. 找出所有未被实际执行匹配的预期步骤（放在 skippedExpectedSteps 数组）
+4. 为有问题的步骤提供详细分析
 
 请只用 JSON 对象回复，格式如下：
 {
@@ -100,9 +142,15 @@ ${actualInteractions}
       "expectedStepId": "step-1",
       "expectedStepName": "预期流程中的步骤名称",
       "actualStepIndex": 0,
-      "actualAction": "实际执行的操作描述（用中文）",
+      "actualAction": "简洁的操作描述（2-6个中文字，用于图表显示）",
       "matchStatus": "matched",
       "matchReason": "简要解释"
+    }
+  ],
+  "skippedExpectedSteps": [
+    {
+      "expectedStepId": "step-3",
+      "expectedStepName": "被跳过的预期步骤名称"
     }
   ],
   "summary": {
@@ -114,14 +162,28 @@ ${actualInteractions}
     "orderViolations": 0,
     "overallScore": 0.75
   },
-  "analysis": "详细分析，解释比较结果，突出任何偏差或意外行为，并提出改进建议。"
+  "problemSteps": [
+    {
+      "stepIndex": 2,
+      "stepName": "步骤名称",
+      "status": "unexpected",
+      "problem": "问题描述",
+      "suggestion": "改进建议"
+    }
+  ]
 }
 
-匹配状态值：
+匹配状态值（只用于 matches 数组）：
 - "matched": 步骤与预期流程匹配良好（符合预期）
 - "partial": 步骤部分匹配，意图正确但执行方式有问题（部分偏离）
 - "unexpected": 步骤完全不在预期流程中（非预期调用）
-- "skipped": 预期步骤未执行（跳过）
+
+重要规则：
+1. matches 数组：必须包含每个实际执行步骤的记录，不能遗漏任何实际步骤
+2. matches 数组中的 matchStatus 只能是 "matched"、"partial" 或 "unexpected"，不能是 "skipped"
+3. skippedExpectedSteps 数组：包含所有未被实际执行匹配的预期步骤（即被跳过的预期步骤）
+4. actualAction 必须简洁（20个中文字以内），用于在流程图中显示
+5. problemSteps 只包含有问题的步骤（status 为 partial 或 unexpected 的步骤）
 
 评分指南：
 - matched: 贡献 1.0 分
@@ -129,12 +191,5 @@ ${actualInteractions}
 - unexpected: 贡献 -0.2 分（惩罚）
 - skipped: 贡献 0 分
 - orderViolations: 每个 -0.1 分惩罚
-
-分析应该用中文解释：
-1. 整体执行质量
-2. 哪些做得好
-3. 哪些偏离了预期
-4. 为什么出现意外步骤（如果有）
-5. 改进建议
 `;
 }
