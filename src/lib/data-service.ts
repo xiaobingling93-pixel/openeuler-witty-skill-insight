@@ -303,10 +303,10 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         if (scoreStr) targetRecord.skill_score = parseFloat(scoreStr);
     }
 
-    if (targetRecord.skill && targetRecord.skill_version !== undefined && targetRecord.skill_version !== null && targetRecord.skill_version !== '') {
+    if (targetRecord.skill && targetRecord.skill_version !== undefined && targetRecord.skill_version !== null) {
         targetRecord.label = `${targetRecord.skill}-v${targetRecord.skill_version}`;
     } else {
-        targetRecord.label = targetRecord.skill || 'without-skill';
+        targetRecord.label = `${targetRecord.skill}-v1` || 'without-skill';
     }
 
     await db.upsertExecution({
