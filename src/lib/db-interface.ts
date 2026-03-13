@@ -796,7 +796,7 @@ class OpenGaussAdapter implements DatabaseAdapter {
     }
 
     async upsertExecutionMatch(data: any) {
-        const { executionId, skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, interactionCount } = data;
+        const { executionId, skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, extractedSteps, interactionCount } = data;
         const client = await this.pool.connect();
         
         try {
@@ -806,15 +806,15 @@ class OpenGaussAdapter implements DatabaseAdapter {
             let result;
             if (checkRes.rows.length > 0) {
                 const uRes = await client.query(
-                    'UPDATE "ExecutionMatch" SET "skillId" = $1, "skillVersion" = $2, "user" = $3, "mode" = $4, "matchJson" = $5, "staticMermaid" = $6, "dynamicMermaid" = $7, "analysisText" = $8, "interactionCount" = $9, "matchedAt" = CURRENT_TIMESTAMP WHERE "executionId" = $10 RETURNING *',
-                    [skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, interactionCount, executionId]
+                    'UPDATE "ExecutionMatch" SET "skillId" = $1, "skillVersion" = $2, "user" = $3, "mode" = $4, "matchJson" = $5, "staticMermaid" = $6, "dynamicMermaid" = $7, "analysisText" = $8, "extractedSteps" = $9, "interactionCount" = $10, "matchedAt" = CURRENT_TIMESTAMP WHERE "executionId" = $11 RETURNING *',
+                    [skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, extractedSteps, interactionCount, executionId]
                 );
                 result = uRes.rows[0];
             } else {
                 const id = uuidv4();
                 const cRes = await client.query(
-                    'INSERT INTO "ExecutionMatch" (id, "executionId", "skillId", "skillVersion", "user", "mode", "matchJson", "staticMermaid", "dynamicMermaid", "analysisText", "interactionCount") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
-                    [id, executionId, skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, interactionCount]
+                    'INSERT INTO "ExecutionMatch" (id, "executionId", "skillId", "skillVersion", "user", "mode", "matchJson", "staticMermaid", "dynamicMermaid", "analysisText", "extractedSteps", "interactionCount") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
+                    [id, executionId, skillId, skillVersion, user, mode, matchJson, staticMermaid, dynamicMermaid, analysisText, extractedSteps, interactionCount]
                 );
                 result = cRes.rows[0];
             }

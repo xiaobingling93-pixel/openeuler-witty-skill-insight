@@ -6,6 +6,7 @@ interface ExecutionFlowComparisonProps {
   executionId: string;
   skillId?: string;
   user?: string | null;
+  onStepClick?: (index: number) => void;
 }
 
 interface ProblemStep {
@@ -44,7 +45,8 @@ interface MatchData {
 export default function ExecutionFlowComparison({ 
   executionId, 
   skillId, 
-  user 
+  user,
+  onStepClick
 }: ExecutionFlowComparisonProps) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMode, setAnalyzeMode] = useState<'dynamic' | 'compare'>('compare');
@@ -413,7 +415,18 @@ export default function ExecutionFlowComparison({
                             <tbody>
                               {problemSteps.map((step, index) => (
                                 <tr key={index} style={{ background: index % 2 === 0 ? '#0f172a' : '#111827' }}>
-                                  <td style={{ padding: '0.75rem', color: '#e2e8f0', borderBottom: '1px solid #334155' }}>#{step.stepIndex}</td>
+                                  <td 
+                                    style={{ 
+                                      padding: '0.75rem', 
+                                      color: onStepClick ? '#38bdf8' : '#e2e8f0', 
+                                      borderBottom: '1px solid #334155',
+                                      cursor: onStepClick ? 'pointer' : 'default',
+                                      textDecoration: onStepClick ? 'underline' : 'none'
+                                    }}
+                                    onClick={() => onStepClick?.(step.stepIndex)}
+                                  >
+                                    #{step.stepIndex}
+                                  </td>
                                   <td style={{ padding: '0.75rem', color: '#e2e8f0', borderBottom: '1px solid #334155' }}>{step.stepName}</td>
                                   <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>
                                     <span style={{ 

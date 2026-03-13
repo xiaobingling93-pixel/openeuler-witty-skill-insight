@@ -1989,6 +1989,7 @@ function DetailPage() {
                                     executionId={taskId}
                                     skillId={(item.skill && item.skill.trim()) || (Array.isArray(item.skills) && item.skills.length > 0 ? item.skills[0] : undefined)}
                                     user={item.user}
+                                    onStepClick={setFocusedStep}
                                 />
 
                                 {/* User Feedback */}

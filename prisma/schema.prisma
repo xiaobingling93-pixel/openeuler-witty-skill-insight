@@ -141,6 +141,7 @@ model ExecutionMatch {
   staticMermaid   String?  // Static flow Mermaid code
   dynamicMermaid  String   // Dynamic flow Mermaid code
   analysisText    String?  // LLM analysis text
+  extractedSteps  String?  // JSON: extracted steps from interactions
   
   interactionCount Int    // Number of interactions at analysis time
   

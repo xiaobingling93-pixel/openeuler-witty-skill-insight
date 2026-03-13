@@ -2,7 +2,7 @@ import { OpenAI } from "openai";
 import { getProxyConfig } from './proxy-config';
 import { getActiveConfig } from './server-config';
 import { db } from './prisma';
-import { generateFlowParsePrompt, generateExecutionMatchPrompt, generateStepExtractPrompt } from '@/prompts/flow-parse-prompt';
+import { generateFlowParsePrompt, generateExecutionMatchPrompt, generateStepExtractPrompt, generateDynamicOnlyMatchPrompt } from '@/prompts/flow-parse-prompt';
 import fs from 'fs';
 import path from 'path';
 
@@ -249,7 +249,8 @@ export function generateMermaidCode(flow: ParsedFlowResult): string {
 export function generateDynamicMermaidCode(
   flow: ParsedFlowResult,
   matches: StepMatch[],
-  skippedExpectedSteps: SkippedExpectedStep[]
+  skippedExpectedSteps: SkippedExpectedStep[],
+  extractedSteps: ExtractedStep[]
 ): string {
   const lines: string[] = ['flowchart LR'];
   
@@ -283,7 +284,7 @@ export function generateDynamicMermaidCode(
   lines.push('    subgraph 实际执行轨迹');
   lines.push('        direction LR');
   
-  const actualSteps: { id: string; label: string; status: string; targetStep?: string; dialogIndex: number }[] = [];
+  const actualSteps: { id: string; label: string; status: string; targetStep?: string; dialogIndex: number; type: string }[] = [];
   
   const validMatches = matches.filter(m => m.matchStatus !== 'skipped');
   const sortedMatches = [...validMatches].sort((a, b) => a.actualStepIndex - b.actualStepIndex);
@@ -293,15 +294,27 @@ export function generateDynamicMermaidCode(
     const status = match.matchStatus;
     const dialogIndex = match.actualStepIndex;
     const label = sanitizeMermaidLabel(`#${dialogIndex} ${match.actualAction}`);
+    
+    // 从 extractedSteps 获取步骤类型
+    const extractedStep = extractedSteps.find(s => 
+      s.dialogStartIndex <= dialogIndex && s.dialogEndIndex >= dialogIndex
+    );
+    const stepType = extractedStep?.type || 'action';
+    
     actualSteps.push({
       id: nodeId,
       label,
       status,
       targetStep: match.expectedStepId,
-      dialogIndex
+      dialogIndex,
+      type: stepType
     });
     
-    lines.push(`        ${nodeId}[${label}]`);
+    // 根据类型生成不同形状的节点
+    const nodeType = stepType === 'decision' ? '{' + label + '}' : 
+                     stepType === 'output' ? '((' + label + '))' :
+                     '[' + label + ']';
+    lines.push(`        ${nodeId}${nodeType}`);
   });
   
   if (actualSteps.length > 1) {
@@ -397,16 +410,14 @@ export async function analyzeExecutionMatch(
     
     const flow: ParsedFlowResult = JSON.parse(parsedFlow.flowJson);
     
-    // 阶段1: 分批并行提取步骤
+    // 不继承动态轨迹数据，每次都重新分析
     const allExtractedSteps = await extractStepsInBatches(client, model, interactions);
-    
-    // 阶段2: 直接合并（不去重）
     const mergedSteps = mergeSteps(allExtractedSteps);
     
-    // 阶段3: 统一匹配
+    // 统一匹配
     const result = await matchStepsWithFlow(client, model, flow, mergedSteps, skillId);
     
-    const dynamicMermaid = generateDynamicMermaidCode(flow, result.matches, result.skippedExpectedSteps);
+    const dynamicMermaid = generateDynamicMermaidCode(flow, result.matches, result.skippedExpectedSteps, mergedSteps);
 
     await db.upsertExecutionMatch({
       executionId,
@@ -418,6 +429,7 @@ export async function analyzeExecutionMatch(
       staticMermaid: parsedFlow.mermaidCode,
       dynamicMermaid,
       analysisText: JSON.stringify(result.problemSteps),
+      extractedSteps: JSON.stringify(mergedSteps),
       interactionCount
     });
 
@@ -659,48 +671,30 @@ export async function analyzeDynamicOnly(
 
     const interactionCount = Array.isArray(interactions) ? interactions.length : 0;
     
-    const interactionSummary = summarizeInteractions(interactions);
+    // 使用分批并行提取步骤（与 Skill 对比相同的逻辑）
+    const allExtractedSteps = await extractStepsInBatches(client, model, interactions);
+    const mergedSteps = mergeSteps(allExtractedSteps);
     
-    const prompt = generateDynamicOnlyPrompt(interactionSummary);
+    // 调用匹配 LLM 生成 actualAction（使用与 Skill 对比相同规则的提示词）
+    const matchResult = await generateDynamicOnlyMatchResult(client, model, mergedSteps);
     
-    const response = await client.chat.completions.create({
-      messages: [{ role: "user", content: prompt }],
-      model: model,
-      temperature: 0.3
-    });
+    // 生成 Mermaid 图
+    const dynamicMermaid = generateActualTrajectoryMermaidCode(matchResult.matches, mergedSteps);
 
-    const content = response.choices?.[0]?.message?.content;
+    // 保存提取的步骤数据
+    const stepsJson = JSON.stringify(mergedSteps);
     
-    if (!content) {
-      return { success: false, error: "LLM 返回内容为空" };
-    }
-
-    let jsonStr = content.trim();
-    const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (match) {
-      jsonStr = match[1];
-    } else {
-      const first = jsonStr.indexOf('{');
-      const last = jsonStr.lastIndexOf('}');
-      if (first !== -1 && last !== -1 && last >= first) {
-        jsonStr = jsonStr.substring(first, last + 1);
-      }
-    }
-
-    const result: DynamicAnalysisResult = JSON.parse(jsonStr);
-    
-    const dynamicMermaid = generateDynamicOnlyMermaidCode(result.steps);
-
     await db.upsertExecutionMatch({
       executionId,
       skillId: null,
       skillVersion: null,
       user: user || null,
       mode: 'dynamic',
-      matchJson: null,
+      matchJson: JSON.stringify(matchResult),
       staticMermaid: null,
       dynamicMermaid,
       analysisText: null,
+      extractedSteps: stepsJson,
       interactionCount
     });
 
@@ -717,6 +711,81 @@ export async function analyzeDynamicOnly(
   }
 }
 
+interface DynamicOnlyMatchResult {
+  matches: {
+    actualStepIndex: number;
+    actualAction: string;
+    type: 'action' | 'decision' | 'output';
+  }[];
+}
+
+async function generateDynamicOnlyMatchResult(
+  client: OpenAI,
+  model: string,
+  steps: ExtractedStep[]
+): Promise<DynamicOnlyMatchResult> {
+  const stepsJson = JSON.stringify(steps, null, 2);
+  const prompt = generateDynamicOnlyMatchPrompt(stepsJson);
+
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: prompt }],
+    model: model,
+    temperature: 0.3
+  });
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("LLM 返回内容为空");
+  }
+
+  let jsonStr = content.trim();
+  const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (match) {
+    jsonStr = match[1];
+  } else {
+    const first = jsonStr.indexOf('{');
+    const last = jsonStr.lastIndexOf('}');
+    if (first !== -1 && last !== -1 && last >= first) {
+      jsonStr = jsonStr.substring(first, last + 1);
+    }
+  }
+
+  return JSON.parse(jsonStr);
+}
+
+function generateActualTrajectoryMermaidCode(
+  matches: DynamicOnlyMatchResult['matches'],
+  extractedSteps: ExtractedStep[]
+): string {
+  const lines: string[] = ['flowchart LR'];
+  
+  matches.forEach((match, index) => {
+    const nodeId = `S${index + 1}`;
+    const dialogIndex = match.actualStepIndex;
+    const label = sanitizeMermaidLabel(`#${dialogIndex} ${match.actualAction}`);
+    const nodeType = match.type === 'decision' ? '{' + label + '}' : 
+                     match.type === 'output' ? '((' + label + '))' :
+                     '[' + label + ']';
+    lines.push(`    ${nodeId}${nodeType}`);
+  });
+
+  for (let i = 0; i < matches.length - 1; i++) {
+    const currentNode = `S${i + 1}`;
+    const nextNode = `S${i + 2}`;
+    lines.push(`    ${currentNode} --> ${nextNode}`);
+  }
+
+  // 添加颜色样式
+  lines.push('');
+  matches.forEach((match, index) => {
+    const nodeId = `S${index + 1}`;
+    const color = '#38bdf8'; // 蓝色
+    lines.push(`    style ${nodeId} fill:${color},color:#0f172a`);
+  });
+
+  return lines.join('\n');
+}
+
 function generateDynamicOnlyPrompt(interactions: string): string {
   return `
 你是一个专家，擅长分析 Agent 执行轨迹并提取执行流程。
@@ -728,26 +797,50 @@ ${interactions}
 
 你的任务是：
 1. 分析执行轨迹，提取实际执行的步骤序列
-2. 为每个步骤命名（简洁的中文描述）
+2. 为每个步骤命名（具体、明确的中文描述）
 3. 提供整体分析
+
+步骤提取规则：
+
+一、步骤划分原则
+1. 完整性：一个步骤完成一个完整的子任务
+2. 独立性：一个步骤可以独立理解和描述
+3. 目的性：每个步骤有明确的业务目标
+4. 原子性：步骤内部的操作是紧密相关的，不应再拆分
+
+二、命名规范
+1. 格式：动词 + 对象 + （可选）目的/结果
+2. 必须具体、明确，禁止模糊命名
+3. 正确示例：
+   - "读取配置文件获取数据库连接参数"
+   - "调用天气API获取城市天气数据"
+   - "解析用户输入提取意图和实体"
+4. 禁止示例：
+   - "检查配置"（太模糊，应说明检查什么）
+   - "分析结果"（太抽象，应说明分析什么结果）
+   - "处理数据"（太笼统，应说明处理什么数据）
+
+三、步骤类型
+- action：执行操作（如：读取文件、调用API、写入数据库）
+- decision：做出判断（如：判断权限、检查条件、验证数据）
+- output：输出结果（如：生成报告、返回结果、输出错误信息）
+
+四、步骤数量
+- 不限制数量，但相似的连续操作应合并为一个步骤
+- 同一操作多次执行（可能因为某些报错）应总结成一个步骤
+- 每个步骤都应该有独立存在的价值
 
 请只用 JSON 对象回复，格式如下：
 {
   "steps": [
     {
       "id": "step-1",
-      "name": "简短的步骤名称（用中文）",
+      "name": "具体的步骤名称（动词+对象格式）",
       "type": "action"
     }
   ],
   "analysis": "详细分析执行过程，包括：执行的主要步骤、是否有异常操作、执行效率评估、改进建议等。"
 }
-
-指南：
-- "type" 可以是: "action"（做某事）, "decision"（做出选择）, "output"（产生结果）
-- 步骤名称要简洁（2-5个字），必须用中文
-- 根据实际交互内容提取关键步骤，忽略无关细节
-- 最多10个步骤
 `;
 }
 
