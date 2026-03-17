@@ -12,7 +12,6 @@ def get_llm():
     base_url = os.getenv("LLM_BASE_URL") or os.getenv(
         "DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"
     )
-    max_tokens = int(os.getenv("LLM_MAX_TOKENS", "8192"))
 
     if not api_key:
         raise ValueError(
@@ -29,9 +28,10 @@ def get_llm():
         base_url=base_url,
         api_key=api_key,
         temperature=0,
-        max_tokens=max_tokens,
-        http_client=httpx.Client(verify=False, timeout=600.0),
-        http_async_client=httpx.AsyncClient(verify=False, timeout=600.0),
+        http_client=httpx.Client(verify=False, timeout=300.0),	 
+        http_async_client=httpx.AsyncClient(verify=False, timeout=300.0),	 
+        max_tokens=4096,	 
+        request_timeout=300.0,
     )
     return llm
 
