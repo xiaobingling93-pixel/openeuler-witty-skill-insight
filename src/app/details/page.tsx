@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
+import ExecutionFlowComparison from '@/components/ExecutionFlowComparison';
 
 const Line = dynamic(() => import('recharts').then(mod => mod.Line), { ssr: false });
 const LineChart = dynamic(() => import('recharts').then(mod => mod.LineChart), { ssr: false });
@@ -47,6 +48,7 @@ interface Execution {
     task_id?: string;
     upload_id?: string;
     version?: string;
+    user?: string;
     user_feedback?: {
         type: 'like' | 'dislike' | null;
         comment: string;
@@ -59,6 +61,11 @@ interface Execution {
     }[];
     skill_issues?: SkillIssue[];
     skill_version?: number;
+    tool_call_count?: number;
+    llm_call_count?: number;
+    tool_call_error_count?: number;
+    input_tokens?: number;
+    output_tokens?: number;
 }
 
 interface Interaction {
@@ -1977,6 +1984,14 @@ function DetailPage() {
                                     </div>
                                 </div>
 
+                                {/* Execution Flow Comparison */}
+                                <ExecutionFlowComparison 
+                                    executionId={taskId}
+                                    skillId={(item.skill && item.skill.trim()) || (Array.isArray(item.skills) && item.skills.length > 0 ? item.skills[0] : undefined)}
+                                    user={item.user}
+                                    onStepClick={setFocusedStep}
+                                />
+
                                 {/* User Feedback */}
                                 <div style={{ marginBottom: '2rem', padding: '1.5rem', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
                                     <h4 style={{ ...sectionHeader, marginBottom: '1rem' }}>用户反馈 (User Feedback)</h4>
@@ -2030,6 +2045,50 @@ function DetailPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                    {/* Runtime Metrics */}
+                                    {(item.llm_call_count != null || item.tool_call_count != null || item.input_tokens != null || item.output_tokens != null || item.tool_call_error_count != null) && (
+                                        <div style={{marginBottom: '1.5rem'}}>
+                                            <h4 style={sectionHeader}>Runtime Metrics</h4>
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                                                gap: '0.75rem',
+                                                marginTop: '0.5rem'
+                                            }}>
+                                                {[
+                                                    { label: 'LLM Calls', value: item.llm_call_count, color: '#38bdf8' },
+                                                    { label: 'Tool Calls', value: item.tool_call_count, color: '#38bdf8' },
+                                                    { label: 'Tool Errors', value: item.tool_call_error_count ?? 0, color: item.tool_call_error_count ? '#f87171' : '#4ade80' },
+                                                    { label: 'Input Tokens', value: item.input_tokens, color: '#38bdf8' },
+                                                    { label: 'Output Tokens', value: item.output_tokens, color: '#38bdf8' },
+                                                ].map((metric, idx) => (
+                                                    <div key={idx} style={{
+                                                        background: '#1e293b',
+                                                        border: '1px solid #334155',
+                                                        borderRadius: '6px',
+                                                        padding: '0.75rem',
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        <div style={{
+                                                            fontSize: '1.3rem',
+                                                            fontWeight: 'bold',
+                                                            color: metric.color
+                                                        }}>
+                                                            {metric.value != null ? metric.value.toLocaleString() : '-'}
+                                                        </div>
+                                                        <div style={{
+                                                            fontSize: '0.75rem',
+                                                            color: '#64748b',
+                                                            marginTop: '4px'
+                                                        }}>
+                                                            {metric.label}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                 {session ? (
                                     session.error ? (

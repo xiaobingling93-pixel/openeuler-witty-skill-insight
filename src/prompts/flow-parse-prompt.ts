@@ -1,0 +1,291 @@
+export function generateFlowParsePrompt(skillContent: string): string {
+  return `
+你是一个专家，擅长分析 Skill 定义并提取执行流程模式。
+
+给定一个 Skill 定义文档（SKILL.md），你的任务是：
+1. 提取预期的执行流程/步骤序列
+2. 识别每个步骤应该完成什么（不一定是具体工具）
+3. 注意任何条件分支或可选步骤
+
+Skill 定义：
+---
+${skillContent}
+---
+
+请分析 skill 并提取结构化的执行流程。
+
+步骤提取规则：
+
+一、步骤划分原则
+1. 完整性：一个步骤完成一个完整的子任务
+2. 独立性：一个步骤可以独立理解和描述
+3. 目的性：每个步骤有明确的业务目标
+4. 原子性：步骤内部的操作是紧密相关的，不应再拆分
+
+二、命名规范
+1. 格式：动词 + 对象 + （可选）目的/结果
+2. 必须具体、明确，禁止模糊命名
+3. 正确示例：
+   - "读取配置文件获取数据库连接参数"
+   - "调用天气API获取城市天气数据"
+   - "解析用户输入提取意图和实体"
+4. 禁止示例：
+   - "检查配置"（太模糊，应说明检查什么）
+   - "分析结果"（太抽象，应说明分析什么结果）
+   - "处理数据"（太笼统，应说明处理什么数据）
+
+三、步骤类型
+- action：执行操作（如：读取文件、调用API、写入数据库）
+- decision：做出判断（如：判断权限、检查条件、验证数据）
+- output：输出结果（如：生成报告、返回结果、输出错误信息）
+
+四、步骤数量
+- 不限制数量，但相似的连续操作应合并为一个步骤
+- 同一操作多次执行（可能因为某些报错）应总结成一个步骤
+- 每个步骤都应该有独立存在的价值
+
+请只用 JSON 对象回复，格式如下：
+{
+  "steps": [
+    {
+      "id": "step-1",
+      "name": "具体的步骤名称（动词+对象格式）",
+      "description": "这个步骤完成什么，达到什么目的",
+      "type": "action",
+      "isOptional": false
+    }
+  ],
+  "branches": [
+    {
+      "condition": "条件的描述",
+      "trueStepId": "step-x",
+      "falseStepId": "step-y"
+    }
+  ],
+  "summary": "整体流程的简要总结"
+}
+`;
+}
+
+interface FlowStep {
+  id: string;
+  name: string;
+  description: string;
+  type: 'action' | 'decision' | 'output';
+  isOptional?: boolean;
+}
+
+interface FlowBranch {
+  condition: string;
+  trueStepId: string;
+  falseStepId: string;
+}
+
+interface ParsedFlow {
+  steps: FlowStep[];
+  branches?: FlowBranch[];
+  summary?: string;
+}
+
+export function generateStepExtractPrompt(
+  interactions: string,
+  batchIndex: number,
+  startIndex: number
+): string {
+  return `
+你是一个专家，擅长分析 Agent 执行轨迹并提取执行步骤。
+
+这是第 ${batchIndex + 1} 批对话数据（对话序号从 ${startIndex} 开始）：
+---
+${interactions}
+---
+
+你的任务是：
+1. 分析这批对话，提取实际执行的步骤
+2. 为每个步骤命名（具体、明确的中文描述）
+3. 记录每个步骤对应的对话序号范围
+
+步骤提取规则：
+
+一、步骤划分原则
+1. 完整性：一个步骤完成一个完整的子任务
+2. 独立性：一个步骤可以独立理解和描述
+3. 目的性：每个步骤有明确的业务目标
+4. 原子性：步骤内部的操作是紧密相关的，不应再拆分
+
+二、命名规范
+1. 格式：动词 + 对象 + （可选）目的/结果
+2. 必须具体、明确，禁止模糊命名
+3. 正确示例：
+   - "读取配置文件获取数据库连接参数"
+   - "调用天气API获取城市天气数据"
+   - "解析用户输入提取意图和实体"
+4. 禁止示例：
+   - "检查配置"（太模糊，应说明检查什么）
+   - "分析结果"（太抽象，应说明分析什么结果）
+   - "处理数据"（太笼统，应说明处理什么数据）
+
+三、步骤类型
+- action：执行操作（如：读取文件、调用API、写入数据库）
+- decision：做出判断（如：判断权限、检查条件、验证数据）
+- output：输出结果（如：生成报告、返回结果、输出错误信息）
+
+四、步骤数量
+- 不限制数量，但相似的连续操作应合并为一个步骤
+- 同一操作多次执行（可能因为某些报错）应总结成一个步骤
+- 每个步骤都应该有独立存在的价值
+
+请只用 JSON 对象回复，格式如下：
+{
+  "steps": [
+    {
+      "name": "具体的步骤名称（动词+对象格式）",
+      "description": "这个步骤做了什么，达到什么目的",
+      "dialogStartIndex": 0,
+      "dialogEndIndex": 2,
+      "type": "action"
+    }
+  ]
+}
+
+注意事项：
+- "dialogStartIndex" 和 "dialogEndIndex" 是这批对话中的相对序号（从 ${startIndex} 开始）
+- 如果这批对话没有有效步骤，返回空数组 {"steps": []}
+- 忽略无关的闲聊或重复内容
+`;
+}
+
+export function generateExecutionMatchPrompt(
+  expectedFlow: ParsedFlow,
+  actualSteps: string,
+  skillName: string
+): string {
+  return `
+你是一个专家，擅长分析 Agent 执行轨迹并将其与预期工作流程进行比较。
+
+Skill "${skillName}" 的预期流程：
+---
+${JSON.stringify(expectedFlow, null, 2)}
+---
+
+实际执行步骤：
+---
+${actualSteps}
+---
+
+你的任务是：
+1. 为每个实际执行步骤生成一条匹配记录（放在 matches 数组）
+2. 将实际步骤与预期流程匹配，或标记为意外步骤
+3. 找出所有未被实际执行匹配的预期步骤（放在 skippedExpectedSteps 数组）
+4. 为有问题的步骤提供详细分析
+
+请只用 JSON 对象回复，格式如下：
+{
+  "matches": [
+    {
+      "expectedStepId": "step-1",
+      "expectedStepName": "预期流程中的步骤名称",
+      "actualStepIndex": 0,
+      "actualAction": "具体的操作描述（动词+对象格式）",
+      "matchStatus": "matched",
+      "matchReason": "简要解释"
+    }
+  ],
+  "skippedExpectedSteps": [
+    {
+      "expectedStepId": "step-3",
+      "expectedStepName": "被跳过的预期步骤名称"
+    }
+  ],
+  "summary": {
+    "totalSteps": 5,
+    "matchedSteps": 3,
+    "partialSteps": 0,
+    "unexpectedSteps": 1,
+    "skippedSteps": 1,
+    "orderViolations": 0,
+    "overallScore": 0.75
+  },
+  "problemSteps": [
+    {
+      "stepIndex": 2,
+      "stepName": "步骤名称",
+      "status": "unexpected",
+      "problem": "问题描述",
+      "suggestion": "改进建议"
+    }
+  ]
+}
+
+匹配状态值（只用于 matches 数组）：
+- "matched": 步骤与预期流程匹配良好（符合预期）
+- "partial": 步骤部分匹配，意图正确但执行方式有问题（部分偏离）
+- "unexpected": 步骤完全不在预期流程中（非预期调用）
+
+重要规则：
+1. matches 数组：必须包含每个实际执行步骤的记录，不能遗漏任何实际步骤
+2. matches 数组中的 matchStatus 只能是 "matched"、"partial" 或 "unexpected"，不能是 "skipped"
+3. skippedExpectedSteps 数组：包含所有未被实际执行匹配的预期步骤（即被跳过的预期步骤）
+4. actualAction 命名规范：
+   - 格式：动词 + 对象 + （可选）目的/结果
+   - 必须具体、明确，禁止模糊命名
+   - 正确示例："读取配置文件获取数据库连接参数"、"调用天气API获取城市天气数据"
+   - 禁止示例："检查配置"、"分析结果"、"处理数据"（太模糊）
+5. problemSteps 只包含有问题的步骤（status 为 partial 或 unexpected 的步骤）
+
+评分指南：
+- matched: 贡献 1.0 分
+- partial: 贡献 0.5 分  
+- unexpected: 贡献 -0.2 分（惩罚）
+- skipped: 贡献 0 分
+- orderViolations: 每个 -0.1 分惩罚
+`;
+}
+
+export function generateDynamicOnlyMatchPrompt(actualSteps: string): string {
+  return `
+你是一个专家，擅长分析 Agent 执行轨迹并生成执行流程图。
+
+实际执行步骤：
+---
+${actualSteps}
+---
+
+你的任务是：
+1. 为每个执行步骤生成一条记录（放在 matches 数组）
+2. 为每个步骤生成简洁的操作描述
+
+请只用 JSON 对象回复，格式如下：
+{
+  "matches": [
+    {
+      "actualStepIndex": 0,
+      "actualAction": "具体的操作描述（动词+对象格式）",
+      "type": "action"
+    }
+  ]
+}
+
+命名规范：
+1. 格式：动词 + 对象 + （可选）目的/结果
+2. 必须具体、明确，禁止模糊命名
+3. 正确示例：
+   - "读取配置文件获取数据库连接参数"
+   - "调用天气API获取城市天气数据"
+   - "解析用户输入提取意图和实体"
+4. 禁止示例：
+   - "检查配置"（太模糊，应说明检查什么）
+   - "分析结果"（太抽象，应说明分析什么结果）
+   - "处理数据"（太笼统，应说明处理什么数据）
+
+步骤类型：
+- action：执行操作（如：读取文件、调用API、写入数据库）
+- decision：做出判断（如：判断权限、检查条件、验证数据）
+- output：输出结果（如：生成报告、返回结果、输出错误信息）
+
+重要规则：
+1. matches 数组必须包含每个步骤的记录，不能遗漏
+2. actualStepIndex 使用步骤的 dialogStartIndex
+3. type 保持与原步骤一致
+`;
+}

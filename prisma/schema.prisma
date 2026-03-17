@@ -60,6 +60,11 @@ model Execution {
   tokens          Int?
   cost            Float?
   latency         Float?
+  toolCallCount      Int?
+  llmCallCount       Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  toolCallErrorCount Int?
   timestamp       DateTime @default(now())
   model           String?
   finalResult     String?
@@ -108,5 +113,38 @@ model UserSettings {
   settingsJson   String // Store ServerSettingsV2 as JSON string
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model ParsedFlow {
+  id          String   @id @default(cuid())
+  skillId     String
+  version     Int
+  user        String?
+  
+  flowJson    String   // JSON: { steps, branches }
+  mermaidCode String   // Generated Mermaid code
+  
+  parsedAt    DateTime @default(now())
+  
+  @@unique([skillId, version, user])
+}
+
+model ExecutionMatch {
+  id              String   @id @default(cuid())
+  executionId     String   @unique
+  skillId         String?
+  skillVersion    Int?
+  user            String?
+  
+  mode            String   @default("compare")  // "compare" or "dynamic"
+  matchJson       String?  // JSON: { matches, summary }
+  staticMermaid   String?  // Static flow Mermaid code
+  dynamicMermaid  String   // Dynamic flow Mermaid code
+  analysisText    String?  // LLM analysis text
+  extractedSteps  String?  // JSON: extracted steps from interactions
+  
+  interactionCount Int    // Number of interactions at analysis time
+  
+  matchedAt       DateTime @default(now())
 }
 
