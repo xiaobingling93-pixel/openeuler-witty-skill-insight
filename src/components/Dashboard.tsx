@@ -1817,7 +1817,7 @@ export default function Dashboard() {
                                                         <div style={{fontSize: '0.75rem', color: '#64748b'}}>
                                                         基于 without-skill 基线.
                                                     </div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', textAlign: 'center', whiteSpace: 'pre-wrap', fontStyle: 'italic', opacity: 0, transition: 'opacity 0.2s ease-in-out' }} 
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', textAlign: 'left', whiteSpace: 'pre-wrap', fontStyle: 'italic', opacity: 0, transition: 'opacity 0.2s ease-in-out' }} 
                                                             onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                                                             onMouseLeave={e => e.currentTarget.style.opacity = '0'}>
                                                         公式: (skill_success_rate - no_skill_success_rate) / (1 - no_skill_success_rate)
