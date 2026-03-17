@@ -1744,7 +1744,10 @@ export default function Dashboard() {
                                                     {drillDownGroupByLabel ? '标签 (Label): ' : '模型 (Model): '} {val}
                                                 </h3>
                                             </div>
-                                            <div className="grid">
+                                            <div className="grid"style={{display: 'grid', 
+                                                                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                                                                        gap: '1rem',
+                                                                        }}>
                                                 {/* Stats Card */}
                                                 <div className="card" style={{ gridColumn: 'span 2' }}>
                                                     <div className="card-title">
@@ -1793,30 +1796,30 @@ export default function Dashboard() {
                                                 </div>
                                                 {/*Skill Lift*/}
                                                 {drillDownGroupByLabel && skillLift !== null && (
-                                                    <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                                                        <div>
-                                                            <div className="card-title text-purple-400" style={{ fontSize: '0.85rem' }}>技能提升 (Skill Lift)</div>
-                                                            <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                                                                <div style={{ marginBottom: '0.5rem' }}>
-                                                                    <div style={{ 
-                                                                        fontSize: '1.2rem', 
-                                                                        fontWeight: 'bold',
-                                                                        color: skillLift > 0 ? '#4ade80' : skillLift < 0 ? '#f87171' : '#94a3b8'
-                                                                    }}>
-                                                                        {skillLift > 0 ? '+' : ''}{skillLift.toFixed(2)}%
-                                                                    </div>
+                                                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                                                    <div>
+                                                        <div className="card-title text-purple-400" style={{ fontSize: '0.85rem' }}>技能提升 (Skill Lift)</div>
+                                                        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+                                                            <div style={{ marginBottom: '0.5rem' }}>
+                                                                <div style={{ 
+                                                                    fontSize: '1.2rem', 
+                                                                    fontWeight: 'bold',
+                                                                    color: skillLift > 0 ? '#4ade80' : skillLift < 0 ? '#f87171' : '#94a3b8'
+                                                                }}>
+                                                                    {skillLift > 0 ? '+' : ''}{skillLift.toFixed(2)}%
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                         <div style={{fontSize: '0.75rem', color: '#64748b'}}>
-                                                            基于 without-skill 基线.
-                                                        </div>
-                                                         <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', textAlign: 'center', whiteSpace: 'pre-wrap', fontStyle: 'italic', opacity: 0, transition: 'opacity 0.2s ease-in-out' }} 
-                                                             onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                                                             onMouseLeave={e => e.currentTarget.style.opacity = '0'}>
-                                                            公式: (skill_success_rate - no_skill_success_rate) / (1 - no_skill_success_rate)
-                                                        </div>
                                                     </div>
+                                                        <div style={{fontSize: '0.75rem', color: '#64748b'}}>
+                                                        基于 without-skill 基线.
+                                                    </div>
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 'auto', textAlign: 'center', whiteSpace: 'pre-wrap', fontStyle: 'italic', opacity: 0, transition: 'opacity 0.2s ease-in-out' }} 
+                                                            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                                            onMouseLeave={e => e.currentTarget.style.opacity = '0'}>
+                                                        公式: (skill_success_rate - no_skill_success_rate) / (1 - no_skill_success_rate)
+                                                    </div>
+                                                </div>
                                                 )}
                                             </div>
                                         </div>
