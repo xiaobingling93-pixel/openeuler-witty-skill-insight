@@ -107,7 +107,7 @@ const CustomTooltip = ({ content }: { content: string }) => {
                     color: '#f1f5f9',
                     padding: '6px 10px',
                     borderRadius: '4px',
-                    whiteSpace: 'normal',
+                    whiteSpace: 'pre-line',
                     minWidth: '280px',
                     maxWidth: '400px',
                     zIndex: 1000,
@@ -920,6 +920,45 @@ function DetailPage() {
             contextWindow: ctxWindowData
         };
     }, [filteredData, comparisonDim]);
+    
+    // CPSR Trend Data Calculation
+    const cpsrTrendData = useMemo(() => {
+        if (filteredData.length === 0) return [];
+        
+        const sortedData = [...filteredData].sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        const dataWithCost = sortedData.filter(d => d.cost != null);
+        if (dataWithCost.length === 0) return [];
+        
+        const result: { timestamp: string; cpsr: number | null; avgCost: number; successRate: number; totalRuns: number }[] = [];
+        
+        let cumulativeCost = 0;
+        let cumulativeSuccesses = 0;
+        
+        dataWithCost.forEach((d, idx) => {
+            cumulativeCost += d.cost || 0;
+            if (d.is_answer_correct) cumulativeSuccesses++;
+            
+            const totalRuns = idx + 1;
+            const avgCost = cumulativeCost / totalRuns;
+            const successRate = cumulativeSuccesses / totalRuns;
+            const cpsr = successRate > 0 ? avgCost / successRate : null;
+            
+            if (cpsr !== null) {
+                result.push({
+                    timestamp: d.timestamp,
+                    cpsr,
+                    avgCost,
+                    successRate,
+                    totalRuns
+                });
+            }
+        });
+        
+        return result;
+    }, [filteredData]);
 
     // Toggle Expand
     const startEditQuery = (taskId: string, currentQuery: string) => {
@@ -1578,7 +1617,7 @@ function DetailPage() {
 
 
             {/* Charts Section */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 <div className="card" style={cardStyle}>
                     <h3 style={chartTitleStyle}>
                         时延趋势 (秒)
@@ -1639,6 +1678,29 @@ function DetailPage() {
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
+                {cpsrTrendData.length > 0 && (
+                  <div className="card" style={cardStyle}>
+                      <h3 style={chartTitleStyle}>
+                          CPSR 趋势
+                          <CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} />
+                      </h3>
+                      <ResponsiveContainer width="100%" height={200}>
+                          <LineChart data={cpsrTrendData}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                              <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
+                              <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `$${v.toFixed(3)}`} />
+                              <Tooltip
+                                  formatter={(val: any, name: any) => {
+                                      if (name === 'CPSR') return [`$${val?.toFixed(4) || 'N/A'}`, 'CPSR'];
+                                      return [val, String(name)];
+                                  }}
+                                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
+                              />
+                              <Line type="monotone" dataKey="cpsr" name="CPSR" stroke="#a78bfa" strokeWidth={2} dot={true} />
+                          </LineChart>
+                      </ResponsiveContainer>
+                  </div>
+                )}
             </div>
 
             {/* Comparison Statistics Section */}

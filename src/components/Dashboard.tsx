@@ -105,6 +105,20 @@ const formatCost = (cost?: number) => {
     return `$${cost.toFixed(2)}`;
 };
 
+const calculateCPSR = (records: Execution[]): number | null => {
+    const recordsWithCost = records.filter(d => d.cost != null);
+    if (recordsWithCost.length === 0) return null;
+    
+    const totalRuns = recordsWithCost.length;
+    const successfulRuns = recordsWithCost.filter(d => d.is_answer_correct).length;
+    if (successfulRuns === 0) return null;
+    
+    const successRate = successfulRuns / totalRuns;
+    const avgCost = recordsWithCost.reduce((sum, d) => sum + (d.cost || 0), 0) / totalRuns;
+    
+    return avgCost / successRate;
+};
+
 const formatDateTime = (ts: string | Date) => {
     if (!ts) return '-';
     const d = new Date(ts);
@@ -1089,6 +1103,9 @@ export default function Dashboard() {
         
         const withCost = relevant.filter(d => d.cost != null);
         const avgCost = withCost.length ? withCost.reduce((sum, d) => sum + (d.cost || 0), 0) / withCost.length : null;
+        
+        // Calculate CPSR
+        const cpsr = calculateCPSR(relevant);
 
         return {
             count: relevant.length,
@@ -1097,6 +1114,7 @@ export default function Dashboard() {
             avgCost,
             globalSkillRecallRate: globalSkillRecallRate,
             querySkillRecallRate: querySkillRecallRate,
+            cpsr,
             avgAnsScore: relevant.filter(d => d.answer_score !== null).length ? (relevant.filter(d => d.answer_score !== null).reduce((sum, d) => sum + (d.answer_score || 0), 0) / relevant.filter(d => d.answer_score !== null).length) : 0,
             best: sorted[0],
             worst: sorted[sorted.length - 1],
@@ -1799,6 +1817,9 @@ export default function Dashboard() {
                                     const worst = [...relevant].sort((a, b) => b.latency - a.latency)[0];
                                     const groupWithCost = relevant.filter(d => d.cost != null);
                                     const groupAvgCost = groupWithCost.length ? groupWithCost.reduce((sum, d) => sum + (d.cost || 0), 0) / groupWithCost.length : null;
+                                    
+                                    // Calculate CPSR for grouped view
+                                    const groupCpsr = calculateCPSR(relevant);
 
                                     // Calculate Skill Lift for grouped view (only for current label)
                                     let skillLift: number | null = null;
@@ -1842,7 +1863,7 @@ export default function Dashboard() {
                                                             (基于 {counts} 条记录)
                                                         </span>
                                                     </div>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', textAlign: 'center' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
                                                         <div>
                                                             <div className="text-sm text-slate-400">平均时延</div>
                                                             <div className="text-xl font-bold">{formatLatency(avgLat)}</div>
@@ -1858,6 +1879,10 @@ export default function Dashboard() {
                                                         <div>
                                                             <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
                                                             <div className="text-xl font-bold">{groupAvgCost != null ? formatCost(groupAvgCost) : '-'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm text-slate-400">CPSR <CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                                            <div className="text-xl font-bold" style={{ color: groupCpsr != null ? '#38bdf8' : '#64748b' }}>{groupCpsr != null ? formatCost(groupCpsr) : 'N/A'}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1930,7 +1955,7 @@ export default function Dashboard() {
                                             (基于 {singleQueryStats.count} 条记录)
                                         </span>
                                     </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', textAlign: 'center' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
                                         <div>
                                             <div className="text-sm text-slate-400">平均时延</div>
                                             <div className="text-xl font-bold">{formatLatency(singleQueryStats.avgLatency)}</div>
@@ -1950,6 +1975,10 @@ export default function Dashboard() {
                                         <div>
                                             <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
                                             <div className="text-xl font-bold">{singleQueryStats.avgCost != null ? formatCost(singleQueryStats.avgCost) : '-'}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-slate-400">CPSR<CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                            <div className="text-xl font-bold" style={{ color: singleQueryStats.cpsr != null ? '#38bdf8' : '#64748b' }}>{singleQueryStats.cpsr != null ? formatCost(singleQueryStats.cpsr) : 'N/A'}</div>
                                         </div>
                                     </div>
 
