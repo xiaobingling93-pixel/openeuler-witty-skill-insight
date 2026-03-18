@@ -20,6 +20,7 @@ from rich.prompt import Prompt
 from .skill_name_gen import (
     gen_skill_name_from_text,
     agen_skill_name_from_text,
+    normalize_skill_name,
 )
 from .markdown_formatter import md_formatter
 from .case_extractor import CaseExtractor
@@ -112,6 +113,79 @@ def render_pattern_detail_md(pattern: FailurePattern) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _ensure_skill_md_name(skill_md_path: str, expected_name: str) -> None:
+    p = pathlib.Path(skill_md_path)
+    try:
+        content = p.read_text(encoding="utf-8")
+    except Exception:
+        return
+
+    expected_name = normalize_skill_name(
+        expected_name, max_length=64, fallback_prefix="skill"
+    )
+    lines = content.splitlines()
+    if not lines:
+        return
+
+    if lines[0].strip() == "---":
+        end_idx = None
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                end_idx = i
+                break
+        if end_idx is None:
+            return
+
+        header = lines[1:end_idx]
+        body = lines[end_idx + 1 :]
+
+        name_idx = None
+        for i, line in enumerate(header):
+            if line.lstrip().startswith("name:"):
+                name_idx = i
+                break
+
+        new_line = f"name: {expected_name}"
+        changed = False
+        if name_idx is None:
+            header.insert(0, new_line)
+            changed = True
+        elif header[name_idx].strip() != new_line:
+            header[name_idx] = new_line
+            changed = True
+
+        if changed:
+            new_lines = ["---", *header, "---", *body]
+            p.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+        return
+
+    new_content = f"---\nname: {expected_name}\n---\n\n{content.lstrip()}"
+    p.write_text(new_content.rstrip() + "\n", encoding="utf-8")
+
+
+async def _compute_v2_skill_md_name(output_dir: str, pattern: FailurePattern) -> str:
+    raw_dir_name = os.path.basename(output_dir)
+    normalized_dir_name = normalize_skill_name(
+        raw_dir_name, max_length=64, fallback_prefix="skill"
+    )
+
+    if normalized_dir_name == raw_dir_name:
+        return raw_dir_name
+
+    seed_text_parts = [
+        pattern.pattern_name,
+        getattr(pattern, "summary", "") or "",
+        pattern.fault_mechanism or "",
+    ]
+    seed_text = "\n".join([p for p in seed_text_parts if p.strip()])
+    try:
+        return await agen_skill_name_from_text(
+            seed_text, max_length=60, fallback_prefix="skill"
+        )
+    except Exception:
+        return normalized_dir_name
+
+
 async def extract_cases_from_docs(
     doc_paths: List[str], output_dir: str
 ) -> Tuple[List[FailureCase], List[dict], List[str]]:
@@ -153,6 +227,7 @@ async def extract_cases_from_docs(
                 "name": skill_name,
                 "save_dir": parent_dir,
                 "description": f"Generated skill for {skill_name}",
+                "normalize_name": False,
                 "scripts_config": {
                     "line_threshold": 5,
                     "min_quality_score": 4.0,
@@ -252,7 +327,9 @@ async def generate_pattern_from_cases(
     merger = PatternMerger()
     current_pattern = existing_pattern
     for i, case in enumerate(failure_cases):
-        console.print(f"正在增量合并第 {i+1}/{len(failure_cases)} 个案例: {case.title}...")
+        console.print(
+            f"正在增量合并第 {i+1}/{len(failure_cases)} 个案例: {case.title}..."
+        )
         try:
             current_pattern = await merger.merge(
                 new_case=case,
@@ -354,28 +431,40 @@ async def generate_skill_v2(
         # Try using DeepSeekAdaptor first
         adaptor = DeepSeekAdaptor()
         generated_by_llm = False
-        
+
         if adaptor.supports_enhancement():
             try:
-                console.print(f"[bold cyan]尝试使用 DeepSeekAdaptor 生成 Skill...[/bold cyan]")
+                console.print(
+                    f"[bold cyan]尝试使用 DeepSeekAdaptor 生成 Skill...[/bold cyan]"
+                )
                 generated_by_llm = await adaptor.generate_skill_with_llm(
                     skill.failure_pattern, pathlib.Path(output_dir)
                 )
                 if generated_by_llm:
                     console.print(f"[bold green]SKILL.md (LLM) 生成成功！[/bold green]")
             except Exception as e:
-                console.print(f"[bold yellow]DeepSeekAdaptor 生成失败，将回退到模板生成: {e}[/bold yellow]")
+                console.print(
+                    f"[bold yellow]DeepSeekAdaptor 生成失败，将回退到模板生成: {e}[/bold yellow]"
+                )
 
         # Fallback to SkillFormatter if LLM generation failed or not supported
         if not generated_by_llm:
-            console.print(f"[bold cyan]使用 SkillFormatter 模板生成 Skill...[/bold cyan]")
+            console.print(
+                f"[bold cyan]使用 SkillFormatter 模板生成 Skill...[/bold cyan]"
+            )
             formatter = SkillFormatter()
             md_content = formatter.render(
-                skill, generated_scripts=generated_scripts, reference_files=reference_files
+                skill,
+                generated_scripts=generated_scripts,
+                reference_files=reference_files,
             )
             with open(output_md, "w", encoding="utf-8") as f:
                 f.write(md_content)
             console.print(f"[bold green]SKILL.md (Template) 生成成功！[/bold green]")
+        expected_name = await _compute_v2_skill_md_name(
+            output_dir, skill.failure_pattern
+        )
+        _ensure_skill_md_name(output_md, expected_name)
 
     except Exception as e:
         console.print(f"[bold red]生成 Markdown 失败: {e}[/bold red]")
@@ -396,6 +485,9 @@ def skill_seekers_gen(user_case_file, skill_name, quality_threshold: float = 0.5
         os.makedirs(custom_skill_paths, exist_ok=True)
         print(f"📁 已创建目录: {custom_skill_paths}")
 
+    skill_name = normalize_skill_name(
+        skill_name, max_length=64, fallback_prefix="skill"
+    )
     skill_dir = os.path.join(custom_skill_paths, skill_name)
 
     # === 统一文档预检：类型自动判断 + 内容抽取（PDF/Markdown/TXT/URL） ===

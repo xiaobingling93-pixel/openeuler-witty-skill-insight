@@ -471,8 +471,7 @@ version: {metadata.version}
         """
         try:
             # 1. Read the prompt
-            project_root = Path(__file__).parents[3]
-            prompt_path = project_root / "examples" / "skill_generator.md"
+            prompt_path = Path(__file__).parent / "prompts" / "skill_generation.md"
 
             if not prompt_path.exists():
                 print(f"❌ Prompt file not found: {prompt_path}")

@@ -30,20 +30,23 @@ class PatternInducer:
 
         parser = PydanticOutputParser(pydantic_object=FailurePattern)
 
-        project_root = pathlib.Path(__file__).parents[3]
-        prompt_path = project_root / "examples" / "pattern_induction_prompt_v3.md"
+        prompt_path = pathlib.Path(__file__).parent / "prompts" / "pattern_induction.md"
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found at {prompt_path}")
         system_prompt = prompt_path.read_text(encoding="utf-8")
 
         general_experience_text = ""
         if general_experiences:
-            general_experience_text = "\n".join([f"- {exp.content}" for exp in general_experiences])
+            general_experience_text = "\n".join(
+                [f"- {exp.content}" for exp in general_experiences]
+            )
 
         cases_list = [json.loads(c.model_dump_json()) for c in cases]
         cases_json = json.dumps(cases_list, indent=2, ensure_ascii=False)
 
-        final_prompt_template = system_prompt + "\n\n{output_constraints}\n\n{format_instructions}"
+        final_prompt_template = (
+            system_prompt + "\n\n{output_constraints}\n\n{format_instructions}"
+        )
         prompt = ChatPromptTemplate.from_messages([("user", final_prompt_template)])
         chain = prompt | self.llm
 
@@ -159,7 +162,9 @@ class PatternInducer:
                 if c.environment.hardware:
                     params["hardware"] = c.environment.hardware
                 rows.append(
-                    KnownInstance(case_id=c.case_id, title=c.title, parameter_values=params)
+                    KnownInstance(
+                        case_id=c.case_id, title=c.title, parameter_values=params
+                    )
                 )
             return rows
 
@@ -170,9 +175,7 @@ class PatternInducer:
         except Exception:
             timeout_s = 180.0
         for attempt in range(2):
-            output_constraints = (
-                "IMPORTANT: Return ONLY a complete valid JSON object. No markdown. No code fences."
-            )
+            output_constraints = "IMPORTANT: Return ONLY a complete valid JSON object. No markdown. No code fences."
             if attempt == 1:
                 output_constraints += (
                     "\nIf the output would be long, keep all long text fields concise (<500 chars each) "
@@ -198,7 +201,9 @@ class PatternInducer:
             json_str = _extract_first_json_object(content)
 
             if not _is_balanced_json_object(json_str):
-                last_error = ValueError("LLM output does not contain a complete JSON object.")
+                last_error = ValueError(
+                    "LLM output does not contain a complete JSON object."
+                )
                 continue
 
             try:
@@ -212,7 +217,9 @@ class PatternInducer:
             debug_dir = pathlib.Path("output_skills") / "_debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
             raw_path = debug_dir / f"induce_llm_raw_{cases[0].case_id}.txt"
-            raw_path.write_text(content if isinstance(content, str) else str(content), encoding="utf-8")
+            raw_path.write_text(
+                content if isinstance(content, str) else str(content), encoding="utf-8"
+            )
             raise last_error
 
         if "source_cases" not in data:
@@ -228,7 +235,9 @@ class PatternInducer:
             data["source_cases"] = ordered
 
         if "known_instances" not in data or not data["known_instances"]:
-            data["known_instances"] = [ki.model_dump(mode="json") for ki in _default_known_instances(cases)]
+            data["known_instances"] = [
+                ki.model_dump(mode="json") for ki in _default_known_instances(cases)
+            ]
 
         pattern = FailurePattern.model_validate(data)
         return pattern

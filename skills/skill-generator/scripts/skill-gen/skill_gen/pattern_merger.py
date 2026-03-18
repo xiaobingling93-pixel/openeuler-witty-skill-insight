@@ -34,8 +34,7 @@ class MergeResponse(BaseModel):
 class PatternMerger:
     def __init__(self):
         self.llm = get_llm()
-        project_root = pathlib.Path(__file__).parents[3]
-        prompt_path = project_root / "examples" / "pattern_merge_prompt_v2.md"
+        prompt_path = pathlib.Path(__file__).parent / "prompts" / "pattern_merge.md"
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found at {prompt_path}")
         self.prompt_text = prompt_path.read_text(encoding="utf-8")
