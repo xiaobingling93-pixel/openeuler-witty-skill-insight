@@ -72,7 +72,8 @@ model Execution {
   model           String?
   finalResult     String?
   skill           String?
-  skills          String?  // JSON array of strings
+  skills          String?  // JSON array of strings (skill names)
+  invokedSkills   String?  // JSON array of {name: string, version: number | null}
   isSkillCorrect  Boolean? @default(false)
   isAnswerCorrect Boolean? @default(false)
   answerScore     Float?

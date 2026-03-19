@@ -4,6 +4,11 @@ import { judgeAnswer } from './judge';
 import { db, prisma } from './prisma';
 import { getModelPricing, calculateCost, getModelContextWindow, DEFAULT_CACHE_READ_RATIO, DEFAULT_CACHE_CREATION_RATIO } from './model-config';
 
+export interface InvokedSkill {
+    name: string;
+    version: number | null;
+}
+
 export interface ExecutionRecord {
     upload_id?: string;
     task_id?: string;
@@ -16,6 +21,7 @@ export interface ExecutionRecord {
     final_result?: string;
     skill?: string;
     skills?: string[];
+    invokedSkills?: InvokedSkill[];
 
     is_skill_correct?: boolean;
     is_answer_correct?: boolean;
@@ -99,6 +105,7 @@ export async function readRecords(user?: string): Promise<ExecutionRecord[]> {
             final_result: r.finalResult || undefined,
             skill: r.skill || undefined,
             skills: r.skills ? JSON.parse(r.skills) : undefined,
+            invokedSkills: r.invokedSkills ? JSON.parse(r.invokedSkills) : undefined,
             is_skill_correct: r.isSkillCorrect || false,
             is_answer_correct: r.isAnswerCorrect || false,
             answer_score: r.answerScore !== undefined ? r.answerScore : undefined,
@@ -288,14 +295,22 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         const matchedConfig = configs.find(c => c.query.trim() === targetRecord.query?.trim());
 
         if (matchedConfig) {
+            // Use invokedSkills with versions if available, otherwise fall back to skills array
+            const invokedSkillsWithVersion = targetRecord.invokedSkills || [];
+            const invokedSkillNames = invokedSkillsWithVersion.map(s => s.name);
+            const invokedSkillsFallback = targetRecord.skills || [];
+
             // Check new expectedSkills field first
             const expectedSkillsList = matchedConfig.expectedSkills || [];
             
             if (expectedSkillsList.length > 0) {
                 // Check against multiple expected skills
-                if (targetRecord.skills !== undefined && Array.isArray(targetRecord.skills)) {
+                const skillsToCheck = invokedSkillsWithVersion.length > 0 
+                    ? invokedSkillsWithVersion 
+                    : invokedSkillsFallback.map(name => ({ name, version: null as number | null }));
+                
+                if (skillsToCheck.length > 0) {
                     let correctInvokedSkills = 0;
-                    const invokedSkills = targetRecord.skills;
                     
                     // Filter out empty skill names before counting
                     const validExpectedSkills = expectedSkillsList.filter(e => e.skill?.trim());
@@ -322,22 +337,25 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                     
                     for (const expected of validExpectedSkills) {
                         const expectedName = expected.skill.trim();
-                        
                         const expectedVer = expected.version ?? null;
                         
-                        // Check if this expected skill was correctly invoked
-                        const hasMatchingSkill = invokedSkills.some(
-                            (s) => (String(s || '').trim()) === expectedName
+                        // Find matching invoked skill by name
+                        const matchingInvoked = skillsToCheck.find(
+                            (s) => s.name === expectedName
                         );
                         
-                        if (hasMatchingSkill) {
-                            // For multi-skill scenarios, we need to check each skill's version
+                        if (matchingInvoked) {
+                            // Check version match
                             let isVersionMatch = false;
                             
                             if (expectedVer === null) {
                                 // Any version is acceptable
                                 isVersionMatch = true;
+                            } else if (matchingInvoked.version !== null) {
+                                // Version was captured, compare directly
+                                isVersionMatch = matchingInvoked.version === expectedVer;
                             } else {
+                                // Version not captured, check against DB activeVersion
                                 const skill = skillsMap.get(expectedName);
                                 if (skill) {
                                     const actualVersion = skill.activeVersion || 0;
@@ -370,21 +388,25 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                 expectedSkill = matchedConfig.skill.trim();
                 expectedSkillVersion = matchedConfig.skillVersion || null;
 
-                if (targetRecord.skills !== undefined && Array.isArray(targetRecord.skills)) {
-                    const hasMatchingSkill = targetRecord.skills.some(
-                        (s) => (String(s || '').trim()) === expectedSkill
-                    );
-                    
-                    // Skill is correct if:
-                    // 1. The skill name matches expectedSkill
-                    // 2. AND (expectedSkillVersion is null OR skill_version matches expectedSkillVersion)
-                    // Treat NULL skill_version as matching version 0 (default)
-                    const actualVersion = targetRecord.skill_version ?? 0;
-                    isSkillCorrect = hasMatchingSkill && (
-                        expectedSkillVersion === null || 
-                        actualVersion === expectedSkillVersion
-                    );
+                // Use invokedSkills with version if available, otherwise fall back to skills array
+                const hasMatchingSkill = invokedSkillNames.includes(expectedSkill) 
+                    || invokedSkillsFallback.some((s) => (String(s || '').trim()) === expectedSkill);
+                
+                // Get the actual version from invokedSkills if available
+                let actualVersion: number | null = null;
+                const matchedInvoked = invokedSkillsWithVersion.find(s => s.name === expectedSkill);
+                if (matchedInvoked && matchedInvoked.version !== null) {
+                    actualVersion = matchedInvoked.version;
+                } else {
+                    // Fall back to the stored skill_version field
+                    actualVersion = targetRecord.skill_version ?? 0;
                 }
+                
+                isSkillCorrect = hasMatchingSkill && (
+                    expectedSkillVersion === null || 
+                    actualVersion === expectedSkillVersion
+                );
+                
                 targetRecord.expected_skill_version = expectedSkillVersion;
                 
                 // Calculate skill recall rate for legacy single skill case
@@ -495,6 +517,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             finalResult: targetRecord.final_result,
             skill: targetRecord.skill,
             skills: targetRecord.skills ? JSON.stringify(targetRecord.skills) : null,
+            invokedSkills: targetRecord.invokedSkills ? JSON.stringify(targetRecord.invokedSkills) : null,
             isSkillCorrect: targetRecord.is_skill_correct,
             isAnswerCorrect: targetRecord.is_answer_correct,
             answerScore: targetRecord.answer_score,
@@ -528,6 +551,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             finalResult: targetRecord.final_result,
             skill: targetRecord.skill,
             skills: targetRecord.skills ? JSON.stringify(targetRecord.skills) : null,
+            invokedSkills: targetRecord.invokedSkills ? JSON.stringify(targetRecord.invokedSkills) : null,
             isSkillCorrect: targetRecord.is_skill_correct,
             isAnswerCorrect: targetRecord.is_answer_correct,
             answerScore: targetRecord.answer_score,

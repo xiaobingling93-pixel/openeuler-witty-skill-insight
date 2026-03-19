@@ -37,11 +37,16 @@ function parseSkillsFromModelResponse(content: string): string[] {
 
 const SKILLS_FETCH_TIMEOUT_MS = 25_000;
 
-function extractSkillsFromWittySession(session: {
+interface InvokedSkill {
+  name: string;
+  version: number | null;
+}
+
+function extractSkillsWithVersionsFromWittySession(session: {
   interactions: { toolCalls?: any[]; responseMessage?: { tool_calls?: any[] } }[];
-}): string[] {
+}): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
+  const skills: InvokedSkill[] = [];
   const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
 
   for (const interaction of session.interactions) {
@@ -61,7 +66,8 @@ function extractSkillsFromWittySession(session: {
           const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
           if (skillNamePattern.test(s) && !seen.has(s)) {
             seen.add(s);
-            skills.push(s);
+            const version = args?.version != null ? Number(args.version) : null;
+            skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
           }
         }
       } catch {
@@ -71,11 +77,11 @@ function extractSkillsFromWittySession(session: {
   return skills;
 }
 
-function extractSkillsFromOpencodeSession(session: {
+function extractSkillsWithVersionsFromOpencodeSession(session: {
   interactions: { toolCalls?: any[]; responseMessage?: { tool_calls?: any[] } }[];
-}): string[] {
+}): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
+  const skills: InvokedSkill[] = [];
   const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
 
   for (const interaction of session.interactions) {
@@ -95,7 +101,8 @@ function extractSkillsFromOpencodeSession(session: {
           const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
           if (skillNamePattern.test(s) && !seen.has(s)) {
             seen.add(s);
-            skills.push(s);
+            const version = args?.version != null ? Number(args.version) : null;
+            skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
           }
         }
       } catch {
@@ -108,7 +115,7 @@ function extractSkillsFromOpencodeSession(session: {
 function collectSkillToolUseFromContent(
   content: unknown,
   seen: Set<string>,
-  skills: string[]
+  skills: InvokedSkill[]
 ): void {
   if (!content || !Array.isArray(content)) return;
   const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
@@ -120,19 +127,20 @@ function collectSkillToolUseFromContent(
     const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
     if (skillNamePattern.test(s) && !seen.has(s)) {
       seen.add(s);
-      skills.push(s);
+      const version = input?.version != null ? Number(input.version) : null;
+      skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
     }
   }
 }
 
-function extractSkillsFromClaudeSession(session: {
+function extractSkillsWithVersionsFromClaudeSession(session: {
   interactions: {
     requestMessages?: { role?: string; content?: unknown }[];
     responseMessage?: { content?: unknown };
   }[];
-}): string[] {
+}): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
+  const skills: InvokedSkill[] = [];
 
   for (const interaction of session.interactions) {
     collectSkillToolUseFromContent(interaction.responseMessage?.content, seen, skills);
@@ -294,27 +302,30 @@ export async function POST(
       framework === 'deepagent(langgraph)' ||
       framework === 'witty' ||
       framework === 'witty(deepagents)';
-    let skills: string[];
+    let skillsWithVersions: InvokedSkill[];
     if (framework === 'claude') {
-      skills = extractSkillsFromClaudeSession(session);
-      if (skills.length === 0) {
+      skillsWithVersions = extractSkillsWithVersionsFromClaudeSession(session);
+      if (skillsWithVersions.length === 0) {
         console.log(`No Skill tool_use in Claude session for ${taskId}, falling back to model extraction...`);
-        skills = await fetchSkillsViaModel(taskId, session.interactions);
+        const fallbackSkills = await fetchSkillsViaModel(taskId, session.interactions);
+        skillsWithVersions = fallbackSkills.map(name => ({ name, version: null }));
       }
-      console.log(`Skills from Claude session for ${taskId}:`, skills);
+      console.log(`Skills from Claude session for ${taskId}:`, JSON.stringify(skillsWithVersions));
     } else if (framework === 'opencode') {
-      skills = extractSkillsFromOpencodeSession(session);
-      console.log(`Skills from OpenEncode session for ${taskId}:`, skills);
+      skillsWithVersions = extractSkillsWithVersionsFromOpencodeSession(session);
+      console.log(`Skills from OpenEncode session for ${taskId}:`, JSON.stringify(skillsWithVersions));
     } else if (isWittyLike) {
-      skills = extractSkillsFromWittySession(session);
-      console.log(`Skills from Witty session for ${taskId}:`, skills);
+      skillsWithVersions = extractSkillsWithVersionsFromWittySession(session);
+      console.log(`Skills from Witty session for ${taskId}:`, JSON.stringify(skillsWithVersions));
     } else {
       console.log(`Fetching skills via model for ${taskId}...`);
-      skills = await fetchSkillsViaModel(taskId, session.interactions);
-      console.log(`Skills from model for ${taskId}:`, skills);
+      const modelSkills = await fetchSkillsViaModel(taskId, session.interactions);
+      skillsWithVersions = modelSkills.map(name => ({ name, version: null }));
+      console.log(`Skills from model for ${taskId}:`, JSON.stringify(skillsWithVersions));
     }
 
-    const primarySkillName = skills.length > 0 ? skills[0] : analysis.skill;
+    const primarySkillName = skillsWithVersions.length > 0 ? skillsWithVersions[0].name : analysis.skill;
+    const primarySkillVersion = skillsWithVersions.length > 0 ? skillsWithVersions[0].version : null;
 
     let skillDef = undefined;
     console.log(`[End] Primary skill name for ${taskId}: ${primarySkillName || '(none)'}`);
@@ -378,12 +389,17 @@ export async function POST(
       body = await request.json();
     } catch (e) {}
 
+    const skillsToSave = skillsWithVersions.length > 0 
+      ? skillsWithVersions.map(s => s.name)
+      : (primarySkillName ? [primarySkillName] : undefined);
+
     const result = await saveExecutionRecord({
       task_id: taskId,
       framework,
       query: analysis.query,
-      skills: skills.length > 0 ? skills : (primarySkillName ? [primarySkillName] : undefined),
+      skills: skillsToSave,
       skill: primarySkillName,
+      skill_version: primarySkillVersion,
       final_result: analysis.final_result,
       tokens: totalTokens,
       latency: duration,
@@ -407,7 +423,7 @@ export async function POST(
         framework,
         duration,
         tokens: totalTokens,
-        skills,
+        skills: skillsWithVersions,
         query_preview: analysis.query?.substring(0, 50),
       },
       upload_result: result,

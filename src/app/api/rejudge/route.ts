@@ -1,5 +1,5 @@
 import { readConfig, saveExecutionRecord } from '@/lib/data-service';
-import { analyzeFailures, extractSkillsFromClaudeSession, extractSkillsFromOpencodeSession, judgeAnswer, normalizeInteractions } from '@/lib/judge';
+import { analyzeFailures, extractSkillsFromClaudeSession, extractSkillsFromOpencodeSession, extractSkillsWithVersionsFromClaudeSession, extractSkillsWithVersionsFromOpencodeSession, InvokedSkill, judgeAnswer, normalizeInteractions } from '@/lib/judge';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/prisma';
@@ -23,19 +23,30 @@ export async function POST(request: Request) {
     const rawInteractions = JSON.parse(session.interactions);
     const normalized = normalizeInteractions(rawInteractions);
 
-    let skills = existingRecord.skills ? JSON.parse(existingRecord.skills) : [];
-    if (skills.length === 0) {
-        if (existingRecord.framework === 'opencode') {
-            skills = extractSkillsFromOpencodeSession(normalized);
-        } else if (existingRecord.framework === 'claudecode' || existingRecord.framework === 'claude') {
-            skills = extractSkillsFromClaudeSession(normalized);
+    // Try to use existing invokedSkills, otherwise re-extract
+    let invokedSkills: InvokedSkill[] = [];
+    if (existingRecord.invokedSkills) {
+        try {
+            invokedSkills = JSON.parse(existingRecord.invokedSkills);
+        } catch {
+            invokedSkills = [];
         }
     }
+    
+    if (invokedSkills.length === 0) {
+        if (existingRecord.framework === 'opencode') {
+            invokedSkills = extractSkillsWithVersionsFromOpencodeSession(normalized);
+        } else if (existingRecord.framework === 'claudecode' || existingRecord.framework === 'claude') {
+            invokedSkills = extractSkillsWithVersionsFromClaudeSession(normalized);
+        }
+    }
+    
+    const skills = invokedSkills.map(s => s.name);
     const skillName = skills[0] || (existingRecord.skill || '').trim();
+    let skillVersion = invokedSkills[0]?.version ?? existingRecord.skillVersion ?? undefined;
 
     const actionUser = data.currentUser || existingRecord.user || null;
     let skillDef = undefined;
-    let skillVersion = existingRecord.skillVersion || undefined;
 
     if (skillName) {
          try {
@@ -43,7 +54,9 @@ export async function POST(request: Request) {
              
              if (skillRecord && skillRecord.versions && skillRecord.versions.length > 0) {
                  skillDef = skillRecord.versions[0].content;
-                 skillVersion = skillRecord.versions[0].version;
+                 if (skillVersion === undefined) {
+                     skillVersion = skillRecord.versions[0].version;
+                 }
              }
          } catch (e) {
              console.error('[Rejudge] Error fetching skill definition:', e);
@@ -91,6 +104,7 @@ export async function POST(request: Request) {
     const result = await saveExecutionRecord({
         task_id: taskId,
         skills: skills,
+        invokedSkills: invokedSkills,
         skill: skillName,
         skill_version: skillVersion,
         answer_score: score,

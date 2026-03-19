@@ -1,5 +1,5 @@
 import { readConfig, saveExecutionRecord } from '@/lib/data-service';
-import { analyzeFailures, analyzeSession, extractSkillsFromClaudeSession, extractSkillsFromOpenClawSession, extractSkillsFromOpencodeSession, judgeAnswer, normalizeInteractions } from '@/lib/judge';
+import { analyzeFailures, analyzeSession, extractSkillsFromClaudeSession, extractSkillsFromOpenClawSession, extractSkillsFromOpencodeSession, extractSkillsWithVersionsFromClaudeSession, extractSkillsWithVersionsFromOpenClawSession, extractSkillsWithVersionsFromOpencodeSession, InvokedSkill, judgeAnswer, normalizeInteractions } from '@/lib/judge';
 import { db, prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 
@@ -97,29 +97,36 @@ export async function POST(request: Request) {
 
 async function processUploadAsync(data: any, username: any, normalized: any, interactions: any) {
     console.log(`[Upload-Async] Starting background analysis for ${data.task_id}`);
-
+    
     const analysis = await analyzeSession(normalized, username);
     
     if (!data.query && analysis.query) data.query = analysis.query;
     if (!data.final_result && analysis.final_result) data.final_result = analysis.final_result;
     
-    let skills: string[] = [];
+    let skillsWithVersions: InvokedSkill[] = [];
     if (data.framework === 'opencode') {
-        skills = extractSkillsFromOpencodeSession(normalized);
+        skillsWithVersions = extractSkillsWithVersionsFromOpencodeSession(normalized);
     } else if (data.framework === 'claudecode' || data.framework === 'claude') {
-        skills = extractSkillsFromClaudeSession(normalized);
+        skillsWithVersions = extractSkillsWithVersionsFromClaudeSession(normalized);
     } else if (data.framework === 'openclaw') {
-        skills = extractSkillsFromOpenClawSession(normalized);
+        skillsWithVersions = extractSkillsWithVersionsFromOpenClawSession(normalized);
     }
     
+    const skills = skillsWithVersions.map(s => s.name);
+    
     if (skills.length === 0 && analysis.skill) {
-        skills = [analysis.skill];
+        skills.push(analysis.skill);
+        skillsWithVersions.push({ name: analysis.skill, version: null });
     }
     
     if (skills.length > 0) {
         data.skills = skills;
+        data.invokedSkills = skillsWithVersions;
         if (!data.skill) data.skill = skills[0];
-        console.log(`[Upload-Async] 🛠️ Extracted Skills: ${JSON.stringify(skills)} for task_id=${data.task_id}`);
+        if (!data.skill_version && skillsWithVersions[0]?.version != null) {
+            data.skill_version = skillsWithVersions[0].version;
+        }
+        console.log(`[Upload-Async] 🛠️ Extracted Skills: ${JSON.stringify(skillsWithVersions)} for task_id=${data.task_id}`);
     } else {
         console.log(`[Upload-Async] ⚠️ No skills extracted for task_id=${data.task_id}`);
     }
