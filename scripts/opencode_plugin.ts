@@ -19,6 +19,8 @@ function logDebug(msg) {
 // Global store
 let sessionStore = new Map();
 let uploadedSessions = new Set();
+let sessionGraph = new Map(); // parent_id -> [child_ids]
+let pendingChildSessions = new Map(); // child_id -> {parent_id, data}
 
 function toMsTimestamp(v) {
     if (v == null) return null;
@@ -116,6 +118,83 @@ function loadConfiguration() {
     };
 }
 
+function collectSessionMessages(sessionId) {
+    const messages = [];
+    for (const [mid, entry] of sessionStore.entries()) {
+        if (entry.info.sessionID === sessionId) {
+            // Calculate latency for this message if possible from parts
+            let partBasedDuration = 0;
+            if (entry.parts.size > 0) {
+                const parts = Array.from(entry.parts.values()).map(p => p.time?.start || 0).filter(t => t > 0).sort((a,b)=>a-b);
+                if (parts.length >= 1) {
+                    const start = parts[0];
+                    const end = parts[parts.length - 1];
+                    partBasedDuration = Math.max(0, end - start);
+                }
+            }
+
+            messages.push({
+                role: entry.info.role || 'unknown',
+                content: entry.content || entry.info.content || "",
+                tool_calls: entry.info.tool_calls || entry.info.toolCalls,
+                function_call: entry.info.function_call || entry.info.functionCall,
+                usage: entry.info.usage || entry.info.tokens,
+                timestamp: entry.info.created || entry.info.time?.created,
+                timeInfo: entry.info.time,
+                partBasedDuration: partBasedDuration,
+                modelID: entry.info.modelID,
+                model: entry.info.model
+            });
+        }
+    }
+    return messages;
+}
+
+function cleanupOrphanedSessions() {
+    const now = Date.now();
+    const oneHourMs = 3600000;
+    
+    for (const [childId, childData] of pendingChildSessions.entries()) {
+        try {
+            const childTime = new Date(childData.timestamp).getTime();
+            if (now - childTime > oneHourMs) {
+                logDebug(`Cleaning up orphaned child session ${childId}`);
+                pendingChildSessions.delete(childId);
+            }
+        } catch (e) {
+            logDebug(`Error checking child session ${childId}: ${e.message}`);
+        }
+    }
+}
+
+function collectSessionWithChildren(sessionId) {
+    const messages = collectSessionMessages(sessionId);
+    const childSessionIds = sessionGraph.get(sessionId) || [];
+    
+    logDebug(`Collecting ${childSessionIds.length} child sessions for ${sessionId}`);
+    
+    for (const childId of childSessionIds) {
+        const childData = pendingChildSessions.get(childId);
+        if (childData && childData.messages) {
+            logDebug(`Merging ${childData.messages.length} messages from child ${childId}`);
+            
+            // Convert roles in child sessions
+            const subagentMessages = childData.messages.map(msg => {
+                if (msg.role === 'assistant') {
+                    return { ...msg, role: 'subagent' };
+                } else if (msg.role === 'user') {
+                    return { ...msg, role: 'opencode' };
+                }
+                return msg;
+            });
+            
+            messages.push(...subagentMessages);
+        }
+    }
+    
+    return { messages, childSessionIds };
+}
+
 export default async function WittySkillInsightPlugin(input) {
   const { apiKey, host } = loadConfiguration();
   if (!apiKey || !host) {
@@ -171,12 +250,29 @@ export default async function WittySkillInsightPlugin(input) {
 
       // logDebug(`Event: ${event.type}`);
 
-      try {
-          // Attempt to find session ID in various places
-          const sessionId = event.session_id || event.properties?.sessionID || event.payload?.session_id;
+       try {
+           // Attempt to find session ID in various places
+           const sessionId = event.session_id || event.properties?.sessionID || event.payload?.session_id;
 
-          // 1. Accumulate Message Metadata
-          if (event.type === 'message.created' || event.type === 'message.updated') {
+           // 0. Handle session.created events to establish parent-child relationships
+           if (event.type === 'session.created') {
+               const sessionInfo = event.properties?.info || event.payload?.info;
+               if (sessionInfo && sessionInfo.id && sessionInfo.parentID) {
+                   const childId = sessionInfo.id;
+                   const parentId = sessionInfo.parentID;
+                   
+                   if (!sessionGraph.has(parentId)) {
+                       sessionGraph.set(parentId, []);
+                   }
+                   if (!sessionGraph.get(parentId).includes(childId)) {
+                       sessionGraph.get(parentId).push(childId);
+                       logDebug(`Session created: ${childId} is child of ${parentId}`);
+                   }
+               }
+           }
+
+           // 1. Accumulate Message Metadata
+           if (event.type === 'message.created' || event.type === 'message.updated') {
              let info = (event.payload && event.payload.message) || (event.properties && event.properties.info);
              if (info && info.id) {
                  const msgId = info.id;
@@ -239,101 +335,148 @@ export default async function WittySkillInsightPlugin(input) {
                   }
                   entry.content = full;
 
-                  // Process Tool Calls for storage
-                  if (entry.toolParts && entry.toolParts.size > 0) {
-                      const tool_calls = [];
-                      for (const tp of entry.toolParts.values()) {
-                          if (tp.tool && tp.state) {
-                              // Try to infer timing from common OpenCode shapes
-                              const startRaw =
-                                  tp.time?.start ??
-                                  tp.time?.created ??
-                                  tp.meta?.start ??
-                                  tp.meta?.created ??
-                                  tp.state?.time?.start ??
-                                  tp.state?.time?.created ??
-                                  tp.state?.started_at ??
-                                  tp.state?.startTime ??
-                                  tp.state?.start_time ??
-                                  null;
-                              const endRaw =
-                                  tp.time?.completed ??
-                                  tp.time?.end ??
-                                  tp.meta?.completed ??
-                                  tp.meta?.end ??
-                                  tp.state?.time?.completed ??
-                                  tp.state?.time?.end ??
-                                  tp.state?.completed_at ??
-                                  tp.state?.endTime ??
-                                  tp.state?.end_time ??
-                                  null;
-                              const timing = buildTiming(startRaw, endRaw);
+                   // Process Tool Calls for storage
+                   if (entry.toolParts && entry.toolParts.size > 0) {
+                       const tool_calls = [];
+                       for (const tp of entry.toolParts.values()) {
+                           if (tp.tool && tp.state) {
+                               // Try to infer timing from common OpenCode shapes
+                               const startRaw =
+                                   tp.time?.start ??
+                                   tp.time?.created ??
+                                   tp.meta?.start ??
+                                   tp.meta?.created ??
+                                   tp.state?.time?.start ??
+                                   tp.state?.time?.created ??
+                                   tp.state?.started_at ??
+                                   tp.state?.startTime ??
+                                   tp.state?.start_time ??
+                                   null;
+                               const endRaw =
+                                   tp.time?.completed ??
+                                   tp.time?.end ??
+                                   tp.meta?.completed ??
+                                   tp.meta?.end ??
+                                   tp.state?.time?.completed ??
+                                   tp.state?.time?.end ??
+                                   tp.state?.completed_at ??
+                                   tp.state?.endTime ??
+                                   tp.state?.end_time ??
+                                   null;
+                               const timing = buildTiming(startRaw, endRaw);
 
-                              tool_calls.push({
-                                  id: tp.callID,
-                                  type: 'function',
-                                  function: {
-                                      name: tp.tool,
-                                      arguments: JSON.stringify(tp.state.input || {})
-                                  },
-                                  state: tp.state.status,
-                                  output: tp.state.output,
-                                  timing: timing
-                              });
-                          }
-                      }
-                      if (tool_calls.length > 0) {
-                           entry.info.tool_calls = tool_calls;
-                      }
-                  }
+                               tool_calls.push({
+                                   id: tp.callID,
+                                   type: 'function',
+                                   function: {
+                                       name: tp.tool,
+                                       arguments: JSON.stringify(tp.state.input || {})
+                                   },
+                                   state: tp.state.status,
+                                   output: tp.state.output,
+                                   timing: timing
+                               });
+
+                               // Detect task tool calls and extract subagent session_id
+                               if (tp.tool === 'task' && tp.state.output) {
+                                   try {
+                                       const taskOutput = tp.state.output;
+                                       const taskIdMatch = taskOutput.match(/task_id:\s*(\w+)/);
+                                       if (taskIdMatch && taskIdMatch[1]) {
+                                           const subagentSessionId = taskIdMatch[1];
+                                           if (subagentSessionId.startsWith('ses')) {
+                                               // Establish parent-child relationship
+                                               const parentSessionId = entry.info.sessionID || sessionId;
+                                               if (parentSessionId) {
+                                                   if (!sessionGraph.has(parentSessionId)) {
+                                                       sessionGraph.set(parentSessionId, []);
+                                                   }
+                                                   if (!sessionGraph.get(parentSessionId).includes(subagentSessionId)) {
+                                                       sessionGraph.get(parentSessionId).push(subagentSessionId);
+                                                       logDebug(`Task detected: ${subagentSessionId} is child of ${parentSessionId}`);
+                                                   }
+                                               }
+                                           }
+                                       }
+                                   } catch (e) {
+                                       logDebug(`Error parsing task output: ${e.message}`);
+                                   }
+                               }
+                           }
+                       }
+                       if (tool_calls.length > 0) {
+                            entry.info.tool_calls = tool_calls;
+                       }
+                   }
                   
                   // Update SessionID if found in event
                   if (sessionId && !entry.info.sessionID) entry.info.sessionID = sessionId;
               }
           }
 
-          // 3. Upload on Session Idle
-          if (event.type === "session.idle") {
-              if (!sessionId || !sessionId.startsWith("ses")) return;
+           // 3. Upload on Session Idle
+           if (event.type === "session.idle") {
+               if (!sessionId || !sessionId.startsWith("ses")) return;
 
-              logDebug(`Session Idle: ${sessionId}. Messages in store: ${sessionStore.size}`);
+               // Check if this is a child session (has parent_id or is in sessionGraph)
+               const parentId = event.parent_id || event.properties?.parentID || event.payload?.parent_id;
+               
+               // Also check if this session is registered as a child in sessionGraph
+               let foundParentId = parentId;
+               if (!foundParentId) {
+                   for (const [potentialParent, childIds] of sessionGraph.entries()) {
+                       if (childIds.includes(sessionId)) {
+                           foundParentId = potentialParent;
+                           logDebug(`Found parent ${foundParentId} for for child ${sessionId} from sessionGraph`);
+                           break;
+                       }
+                   }
+               }
+               
+               if (foundParentId) {
+                   logDebug(`Child ${sessionId} detected with parent ${foundParentId}`);
+                   
+                   // Store child session data and wait for parent
+                   if (!sessionGraph.has(foundParentId)) {
+                       sessionGraph.set(foundParentId, []);
+                   }
+                   if (!sessionGraph.get(foundParentId).includes(sessionId)) {
+                       sessionGraph.get(foundParentId).push(sessionId);
+                   }
+                   
+                   // Collect and store child session data
+                   const childMessages = collectSessionMessages(sessionId);
+                   if (childMessages.length > 0) {
+                       pendingChildSessions.set(sessionId, {
+                           parent_id: foundParentId,
+                           messages: childMessages,
+                           timestamp: new Date().toISOString()
+                       });
+                       logDebug(`Stored ${childMessages.length} messages for child session ${sessionId}`);
+                   }
+                   
+                   return; // Don't upload child session separately
+               }
 
-              const messages = [];
-              for (const [mid, entry] of sessionStore.entries()) {
-                  if (entry.info.sessionID === sessionId) {
-                      // Calculate latency for this message if possible from parts
-                      let partBasedDuration = 0;
-                      if (entry.parts.size > 0) {
-                          const parts = Array.from(entry.parts.values()).map(p => p.time?.start || 0).filter(t => t > 0).sort((a,b)=>a-b);
-                          if (parts.length >= 1) {
-                              const start = parts[0];
-                              const end = parts[parts.length - 1];
-                              // Rough estimation: span between first and last part start time
-                              partBasedDuration = Math.max(0, end - start);
-                              // Add a small buffer for the last chunk generation? say 50ms per char? 
-                              // Or if there is a 'completed' timestamp on info, prefer that.
-                          }
-                      }
+               logDebug(`Session Idle: ${sessionId}. Messages in store: ${sessionStore.size}`);
 
-                      messages.push({
-                          role: entry.info.role || 'unknown',
-                          content: entry.content || entry.info.content || "",
-                          tool_calls: entry.info.tool_calls || entry.info.toolCalls,
-                          function_call: entry.info.function_call || entry.info.functionCall,
-                          usage: entry.info.usage || entry.info.tokens,
-                          timestamp: entry.info.created || entry.info.time?.created,
-                          timeInfo: entry.info.time,
-                          partBasedDuration: partBasedDuration,
-                          modelID: entry.info.modelID,
-                          model: entry.info.model
-                      });
-                  }
-              }
+               // This is a parent session, collect all messages including children
+               const { messages, childSessionIds } = collectSessionWithChildren(sessionId);
 
-              if (messages.length === 0) {
-                  logDebug(`No messages found for session ${sessionId}, skipping upload.`);
-                  return;
-              }
+               if (messages.length === 0) {
+                   logDebug(`No messages found for session ${sessionId}, skipping upload.`);
+                   return;
+               }
+
+               // Cleanup child session data after successful upload
+               for (const childId of childSessionIds) {
+                   pendingChildSessions.delete(childId);
+                   logDebug(`Cleaned up child session ${childId}`);
+               }
+               sessionGraph.delete(sessionId);
+               
+               // Cleanup orphaned child sessions (older than 1 hour)
+               cleanupOrphanedSessions();
 
               // Sort messages by timestamp safely
               messages.sort((a, b) => {

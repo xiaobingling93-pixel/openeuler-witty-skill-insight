@@ -384,21 +384,26 @@ const RenderInteractionList = ({
         return rows;
     }, [interactions]);
 
-    // Calculate Top 5 Latency rows (LLM + Tool)
+    // Calculate Top 5 Latency rows (LLM only)
     const topLatencyIndices = useMemo(() => {
-        const sorted = [...processedInteractions].sort((a, b) => b.latency - a.latency);
+        const llmOnly = processedInteractions.filter(x => x.kind === 'llm');
+        const sorted = [...llmOnly].sort((a, b) => b.latency - a.latency);
         return new Set(sorted.slice(0, 5).filter(x => x.latency > 0).map(x => x.id));
     }, [processedInteractions]);
 
-    // Calculate Top 5 Token Indices (based on original order)
+    // Calculate Top 5 Token Indices (LLM only)
     const topTokenIndices = useMemo(() => {
-        const sorted = [...processedInteractions].sort((a, b) => b.tokens - a.tokens);
+        const llmOnly = processedInteractions.filter(x => x.kind === 'llm');
+        const sorted = [...llmOnly].sort((a, b) => b.tokens - a.tokens);
         return new Set(sorted.slice(0, 5).filter(x => x.tokens > 0).map(x => x.id));
     }, [processedInteractions]);
 
-    // Apply sorting for display
-    const displayedInteractions = useMemo(() => {
-        const data = [...processedInteractions];
+    // Extract main steps (LLM only)
+    const mainSteps = processedInteractions.filter(x => x.kind === 'llm');
+
+    // Apply sorting for main steps only
+    const sortedMainSteps = useMemo(() => {
+        const data = [...mainSteps];
         if (sortMode === 'latency_desc') {
             data.sort((a, b) => b.latency - a.latency);
         } else if (sortMode === 'tokens_desc') {
@@ -407,14 +412,25 @@ const RenderInteractionList = ({
             data.sort((a, b) => a.order - b.order);
         }
         return data;
-    }, [processedInteractions, sortMode]);
+    }, [mainSteps, sortMode]);
 
-    // Pagination Logic
-    const totalPages = Math.ceil(displayedInteractions.length / pageSize);
-    const paginatedInteractions = useMemo(() => {
+    // Pagination Logic based on main steps count
+    const totalPages = Math.ceil(sortedMainSteps.length / pageSize);
+    const paginatedMainSteps = useMemo(() => {
         const start = currentPage * pageSize;
-        return displayedInteractions.slice(start, start + pageSize);
-    }, [displayedInteractions, currentPage, pageSize]);
+        return sortedMainSteps.slice(start, start + pageSize);
+    }, [sortedMainSteps, currentPage, pageSize]);
+
+    // Attach tool steps to their parent main steps
+    const paginatedInteractions = useMemo(() => {
+        const result: any[] = [];
+        paginatedMainSteps.forEach(mainStep => {
+            result.push(mainStep);
+            const tools = processedInteractions.filter(x => x.kind === 'tool' && x.parentIndex === mainStep.parentIndex);
+            result.push(...tools);
+        });
+        return result;
+    }, [paginatedMainSteps, processedInteractions]);
 
     // Reset page when sort mode changes
     useEffect(() => {
@@ -503,7 +519,9 @@ const RenderInteractionList = ({
                         isTool ? '#fbbf24' :
                             role === 'user' ? '#a78bfa' :
                                 role === 'assistant' ? '#38bdf8' :
-                                    '#e2e8f0';
+                                    role === 'opencode' ? '#ef4444' :
+                                        role === 'subagent' ? '#22c55e' :
+                                            '#e2e8f0';
 
                     const toolAccentColor = isTopLatency ? '#fb923c' : '#fbbf24';
                     const focusShadow = '0 0 0 2px rgba(96, 165, 250, 0.3)';

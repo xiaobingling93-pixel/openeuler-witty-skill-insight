@@ -205,7 +205,7 @@ async function run(options = {}) {
   
   console.log('📚 【步骤 5/5】添加技能...')
   try {
-    await runCommand('npx skills add https://AtomGit.com/openeuler/witty-skill-insight.git')
+    await runCommand('npx skills add https://atomgit.com/openeuler/witty-skill-insight.git')
     console.log('\n   ✅ 技能添加成功\n')
   } catch (error) {
     errors.push({ step: 5, message: `添加技能失败: ${error.message}` })
