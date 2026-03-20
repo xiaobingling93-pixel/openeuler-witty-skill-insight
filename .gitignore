@@ -64,3 +64,6 @@ bun.lock
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# debug
+.vscode
