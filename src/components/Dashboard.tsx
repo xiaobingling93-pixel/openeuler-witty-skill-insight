@@ -70,7 +70,7 @@ interface AvgComparison {
     query: string;
     shortQuery: string;
     latestTimestamp: number;
-    [key: string]: string | number;
+    [key: string]: string | number | null;
 }
 
 const COLORS = ['#38bdf8', '#f472b6', '#4ade80', '#fbbf24', '#818cf8', '#f87171'];
@@ -970,11 +970,12 @@ export default function Dashboard() {
                             const avgLat = fwOrModelData.reduce((s, x) => s + x.latency, 0) / fwOrModelData.length;
                             const avgTok = fwOrModelData.reduce((s, x) => s + x.tokens, 0) / fwOrModelData.length;
                             const evaluatedDatas = fwOrModelData.filter(d => d.answer_score !== null);
-                            const avgScore = evaluatedDatas.length ? evaluatedDatas.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedDatas.length : 0;
+                            const hasEvaluatedData = evaluatedDatas.length > 0;
+                            const avgScore = hasEvaluatedData ? evaluatedDatas.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedDatas.length : 0;
                             const skillRecallRate = fwOrModelData.reduce((s, x) => s + (x.skill_recall_rate ?? 0), 0) / fwOrModelData.length * 100;
                             qRecord[`${seriesName}_lat`] = parseFloat(avgLat.toFixed(2));
                             qRecord[`${seriesName}_tok`] = Math.round(avgTok);
-                            qRecord[`${seriesName}_score`] = parseFloat(avgScore.toFixed(2));
+                            qRecord[`${seriesName}_score`] = hasEvaluatedData ? parseFloat(avgScore.toFixed(2)) : null;
                             qRecord[`${seriesName}_recall`] = parseFloat(skillRecallRate.toFixed(1));
                         }
                     });
@@ -1013,12 +1014,13 @@ export default function Dashboard() {
                         const avgTok = fwOrModelData.reduce((s, x) => s + x.tokens, 0) / fwOrModelData.length;
                         const skillRecallRate = fwOrModelData.reduce((s, x) => s + (x.skill_recall_rate ?? 0), 0) / fwOrModelData.length * 100;
                         const evaluatedDatas = fwOrModelData.filter(d => d.answer_score !== null);
-                        const avgScore = evaluatedDatas.length ? evaluatedDatas.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedDatas.length : 0;
+                        const hasEvaluatedData = evaluatedDatas.length > 0;
+                        const avgScore = hasEvaluatedData ? evaluatedDatas.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedDatas.length : 0;
 
                         row[`${seriesName}_lat`] = parseFloat(avgLat.toFixed(2));
                         row[`${seriesName}_tok`] = Math.round(avgTok);
                         row[`${seriesName}_recall`] = parseFloat(skillRecallRate.toFixed(1));
-                        row[`${seriesName}_score`] = parseFloat(avgScore.toFixed(2));
+                        row[`${seriesName}_score`] = hasEvaluatedData ? parseFloat(avgScore.toFixed(2)) : null;
                         hasData = true;
                     }
                 });
@@ -1463,7 +1465,8 @@ export default function Dashboard() {
                             const avgLat = fwData.length ? (fwData.reduce((s, x) => s + x.latency, 0) / fwData.length) : 0;
                             const avgTok = fwData.length ? (fwData.reduce((s, x) => s + x.tokens, 0) / fwData.length) : 0;
                             const evaluatedFwData = fwData.filter(d => d.answer_score !== null);
-                            const avgScore = evaluatedFwData.length ? (evaluatedFwData.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedFwData.length) : 0;
+                            const hasEvaluatedData = evaluatedFwData.length > 0;
+                            const avgScore = hasEvaluatedData ? (evaluatedFwData.reduce((s, x) => s + (x.answer_score || 0), 0) / evaluatedFwData.length) : 0;
                             const skillRecallRate = fwDataWithExpectedSkill.length ? fwDataWithExpectedSkill.reduce((s, x) => s + (x.skill_recall_rate ?? 0), 0) / fwDataWithExpectedSkill.length * 100 : 0;
 
                             return (
@@ -1482,20 +1485,18 @@ export default function Dashboard() {
                                             <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f1f5f9' }}>{formatTokens(Math.round(avgTok))}</span>
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px solid #334155', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem' }}>
-                                        {/* Accuracy */}
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>准确率</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: avgScore > 0.8 ? '#4ade80' : '#fbbf24' }}>
-                                                {(avgScore * 100).toFixed(1)}%
-                                            </span>
-                                        </div>
-                                        {/* Skill Recall Rate */}
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>技能召回率</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fbbf24' }}>
-                                                {skillRecallRate.toFixed(1)}%
-                                            </span>
+                                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px solid #334155' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem', alignItems: 'center' }}>
+                                            {/* Accuracy Label - Aligned with Latency (Left) */}
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>准确率</span>
+                                            </div>
+                                            {/* Score Value - Aligned with Token (Right) */}
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontSize: '1.8rem', fontWeight: 800, color: !hasEvaluatedData ? '#94a3b8' : (avgScore > 0.8 ? '#4ade80' : '#fbbf24') }}>
+                                                    {hasEvaluatedData ? `${(avgScore * 100).toFixed(1)}%` : '--'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
