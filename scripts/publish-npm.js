@@ -368,9 +368,17 @@ function main() {
         process.exit(1)
       }
       
-      const publishCmd = npmTag === 'latest' 
-        ? 'npm publish' 
-        : `npm publish --tag ${npmTag}`
+      const isScopedPackage = packageJson.name.startsWith('@')
+      let publishCmd
+      if (isScopedPackage) {
+        publishCmd = npmTag === 'latest' 
+          ? 'npm publish --access public' 
+          : `npm publish --access public --tag ${npmTag}`
+      } else {
+        publishCmd = npmTag === 'latest' 
+          ? 'npm publish' 
+          : `npm publish --tag ${npmTag}`
+      }
       
       runCommand(publishCmd, `Publishing to npm (${npmTag} tag)`)
       

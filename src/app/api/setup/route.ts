@@ -7,13 +7,13 @@ export async function GET(request: Request) {
 
     const script = `#!/bin/bash
 # =============================================================================
-# Witty-Skill-Insight One-Click Setup
+# Skill-insight One-Click Setup
 # =============================================================================
 
 WITTY_HOST="${host}"
 WITTY_BASE_URL="${baseUrl}"
 
-echo "🚀 Fetching Witty-Skill-Insight telemetry components from $WITTY_BASE_URL..."
+echo "🚀 Fetching Skill-insight telemetry components from $WITTY_BASE_URL..."
 
 # 1. Setup Directories
 mkdir -p "$HOME/.witty"
@@ -52,7 +52,7 @@ async function select() {
     console.log('');
     console.log('\\x1b[36m%s\\x1b[0m', '╔══════════════════════════════════════════════════════════╗');
     console.log('\\x1b[36m%s\\x1b[0m', '║                                                          ║');
-    console.log('\\x1b[1m\\x1b[36m%s\\x1b[0m', '║                 ✨ witty-skill-insight ✨                ║');
+    console.log('\\x1b[1m\\x1b[36m%s\\x1b[0m', '║                 ✨ Skill-insight ✨                      ║');
     console.log('\\x1b[36m%s\\x1b[0m', '║                                                          ║');
     console.log('\\x1b[36m%s\\x1b[0m', '╚══════════════════════════════════════════════════════════╝');
     console.log('');
