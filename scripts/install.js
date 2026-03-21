@@ -124,14 +124,14 @@ async function run(options = {}) {
   console.log('\n')
   console.log('╔════════════════════════════════════════════════════════════╗')
   console.log('║                                                            ║')
-  console.log('║          🚀 Witty-Skill-Insight 一键部署 🚀                ║')
+  console.log('║             🚀 Skill-insight 一键部署 🚀                ║')
   console.log('║                                                            ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
   
   console.log('📦 【步骤 1/5】安装 npm 包...')
   try {
-    await runCommand('npm install skills-insight', { silent: true })
+    await runCommand('npm install @witty-ai/skill-insight', { silent: true })
     console.log('   ✅ npm 包安装成功\n')
   } catch (error) {
     errors.push({ step: 1, message: `npm install 失败: ${error.message}` })
@@ -152,7 +152,7 @@ async function run(options = {}) {
       fs.mkdirSync(logDir, { recursive: true })
     }
     
-    const startProc = spawn('npx', ['skills-insight', 'start', '--port', port.toString()], {
+    const startProc = spawn('npx', ['@witty-ai/skill-insight', 'start', '--port', port.toString()], {
       stdio: ['ignore', fs.openSync(logPath, 'a'), fs.openSync(logPath, 'a')],
       shell: true,
       detached: true
@@ -205,7 +205,7 @@ async function run(options = {}) {
   
   console.log('📚 【步骤 5/5】添加技能...')
   try {
-    await runCommand('npx skills add https://AtomGit.com/openeuler/witty-skill-insight.git')
+    await runCommand('npx skills add https://atomgit.com/openeuler/witty-skill-insight.git')
     console.log('\n   ✅ 技能添加成功\n')
   } catch (error) {
     errors.push({ step: 5, message: `添加技能失败: ${error.message}` })
