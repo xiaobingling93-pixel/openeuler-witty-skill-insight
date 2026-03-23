@@ -5,6 +5,11 @@ import path from 'path';
 import { getProxyConfig } from './proxy-config';
 import { getActiveConfig } from './server-config';
 
+export interface InvokedSkill {
+    name: string;
+    version: number | null;
+}
+
 const LOG_FILE = path.join(process.cwd(), 'data', 'model_debug.jsonl');
 
 function appendLog(stage: string, input: any, output: any) {
@@ -631,9 +636,9 @@ export function normalizeInteractions(messages: any[]): any[] {
     return normalized;
 }
 
-export function extractSkillsFromOpencodeSession(interactions: any[]): string[] {
+export function extractSkillsWithVersionsFromOpencodeSession(interactions: any[]): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
+  const skills: InvokedSkill[] = [];
   const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
 
   const collectFromMsg = (msg: any) => {
@@ -650,7 +655,8 @@ export function extractSkillsFromOpencodeSession(interactions: any[]): string[] 
           const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
           if (skillNamePattern.test(s) && !seen.has(s)) {
             seen.add(s);
-            skills.push(s);
+            const version = args?.version != null ? Number(args.version) : null;
+            skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
           }
         }
       } catch {}
@@ -667,10 +673,9 @@ export function extractSkillsFromOpencodeSession(interactions: any[]): string[] 
   return skills;
 }
 
-export function extractSkillsFromClaudeSession(interactions: any[]): string[] {
+export function extractSkillsWithVersionsFromClaudeSession(interactions: any[]): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
-  const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
+  const skills: InvokedSkill[] = [];
 
   const collect = (content: any) => {
     if (!content || !Array.isArray(content)) return;
@@ -682,9 +687,11 @@ export function extractSkillsFromClaudeSession(interactions: any[]): string[] {
       const skillName = input?.skill ?? input?.skill_name ?? input?.skillName ?? input?.name;
       if (skillName == null || !String(skillName).trim()) continue;
       const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
+      const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
       if (skillNamePattern.test(s) && !seen.has(s)) {
         seen.add(s);
-        skills.push(s);
+        const version = input?.version != null ? Number(input.version) : null;
+        skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
       }
     }
   };
@@ -700,10 +707,9 @@ export function extractSkillsFromClaudeSession(interactions: any[]): string[] {
   return skills;
 }
 
-export function extractSkillsFromOpenClawSession(interactions: any[]): string[] {
+export function extractSkillsWithVersionsFromOpenClawSession(interactions: any[]): InvokedSkill[] {
   const seen = new Set<string>();
-  const skills: string[] = [];
-  const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
+  const skills: InvokedSkill[] = [];
 
   const collect = (content: any) => {
     if (!content || !Array.isArray(content)) return;
@@ -715,9 +721,11 @@ export function extractSkillsFromOpenClawSession(interactions: any[]): string[] 
       const skillName = input?.skill ?? input?.skill_name ?? input?.skillName ?? input?.name;
       if (skillName == null || !String(skillName).trim()) continue;
       const s = String(skillName).trim().replace(/^['"]+|['"]+$/g, '');
+      const skillNamePattern = /^[a-zA-Z0-9_\-\.]+$/;
       if (skillNamePattern.test(s) && !seen.has(s)) {
         seen.add(s);
-        skills.push(s);
+        const version = input?.version != null ? Number(input.version) : null;
+        skills.push({ name: s, version: (version !== null && !isNaN(version)) ? version : null });
       }
     }
   };
@@ -731,6 +739,18 @@ export function extractSkillsFromOpenClawSession(interactions: any[]): string[] 
     }
   }
   return skills;
+}
+
+export function extractSkillsFromOpencodeSession(interactions: any[]): string[] {
+  return extractSkillsWithVersionsFromOpencodeSession(interactions).map(s => s.name);
+}
+
+export function extractSkillsFromClaudeSession(interactions: any[]): string[] {
+  return extractSkillsWithVersionsFromClaudeSession(interactions).map(s => s.name);
+}
+
+export function extractSkillsFromOpenClawSession(interactions: any[]): string[] {
+  return extractSkillsWithVersionsFromOpenClawSession(interactions).map(s => s.name);
 }
 
 

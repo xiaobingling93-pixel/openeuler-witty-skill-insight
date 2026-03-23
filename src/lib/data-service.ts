@@ -4,6 +4,11 @@ import { judgeAnswer } from './judge';
 import { db, prisma } from './prisma';
 import { getModelPricing, calculateCost, getModelContextWindow, DEFAULT_CACHE_READ_RATIO, DEFAULT_CACHE_CREATION_RATIO } from './model-config';
 
+export interface InvokedSkill {
+    name: string;
+    version: number | null;
+}
+
 export interface ExecutionRecord {
     upload_id?: string;
     task_id?: string;
@@ -16,6 +21,7 @@ export interface ExecutionRecord {
     final_result?: string;
     skill?: string;
     skills?: string[];
+    invokedSkills?: InvokedSkill[];
 
     is_skill_correct?: boolean;
     is_answer_correct?: boolean;
@@ -43,6 +49,7 @@ export interface ExecutionRecord {
     input_tokens?: number;
     output_tokens?: number;
     tool_call_error_count?: number;
+    skill_recall_rate?: number | null;
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;
     max_single_call_tokens?: number;
@@ -55,7 +62,9 @@ export interface ExecutionRecord {
 export interface ConfigItem {
     id: string;
     query: string;
-    skill: string;
+    skill: string; // Legacy
+    skillVersion?: number | null; // Legacy
+    expectedSkills?: { skill: string; version: number | null }[]; // New field
     standard_answer: string;
     root_causes?: { content: string; weight: number }[];
     key_actions?: { content: string; weight: number }[];
@@ -95,6 +104,7 @@ export async function readRecords(user?: string): Promise<ExecutionRecord[]> {
             final_result: r.finalResult || undefined,
             skill: r.skill || undefined,
             skills: r.skills ? JSON.parse(r.skills) : undefined,
+            invokedSkills: r.invokedSkills ? JSON.parse(r.invokedSkills) : undefined,
             is_skill_correct: r.isSkillCorrect || false,
             is_answer_correct: r.isAnswerCorrect || false,
             answer_score: r.answerScore !== undefined ? r.answerScore : undefined,
@@ -114,6 +124,8 @@ export async function readRecords(user?: string): Promise<ExecutionRecord[]> {
             cache_read_input_tokens: r.cacheReadInputTokens ?? undefined,
             cache_creation_input_tokens: r.cacheCreationInputTokens ?? undefined,
             max_single_call_tokens: r.maxSingleCallTokens ?? undefined,
+            expected_skill_version: r.expectedSkillVersion ?? null,
+            skill_recall_rate: r.skillRecallRate ?? null,
             context_window_pct: (r.maxSingleCallTokens != null && cwResult)
                 ? Math.round((r.maxSingleCallTokens / cwResult.contextWindow) * 1000) / 10
                 : undefined,
@@ -141,18 +153,25 @@ export async function readConfig(user?: string | null): Promise<ConfigItem[]> {
     }
 
     const configs = await db.findConfigs(where);
-    return configs.map((c: any) => {
-        const parse = (s: string | null) => {
+     return configs.map((c: any) => {
+        const parse = (s: string | null, fieldName: string) => {
             if (!s) return undefined;
-            try { return JSON.parse(s); } catch (e) { return undefined; }
+            try { 
+                return JSON.parse(s); 
+            } catch (e) { 
+                console.error(`[readConfig] Failed to parse ${fieldName} for config ${c.id}:`, e);
+                return undefined; 
+            }
         };
         return {
             id: c.id,
             query: c.query,
-            skill: c.skill,
+            skill: c.skill, // Legacy
+            skillVersion: c.skillVersion, // Legacy
+            expectedSkills: parse(c.expectedSkills, 'expectedSkills'), // New field
             standard_answer: c.standardAnswer,
-            root_causes: parse(c.rootCauses),
-            key_actions: parse(c.keyActions),
+            root_causes: parse(c.rootCauses, 'rootCauses'),
+            key_actions: parse(c.keyActions, 'keyActions'),
             parse_status: c.parseStatus || 'completed',
         };
     });
@@ -198,6 +217,8 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             label: dbRecord.label || undefined,
             user: dbRecord.user || undefined,
             skill_version: dbRecord.skillVersion || undefined,
+            expected_skill_version: dbRecord.expectedSkillVersion ?? null,
+            skill_recall_rate: dbRecord.skillRecallRate ?? null,
             model: dbRecord.model || undefined,
             tool_call_count: dbRecord.toolCallCount ?? undefined,
             llm_call_count: dbRecord.llmCallCount ?? undefined,
@@ -262,7 +283,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
 
     const NO_MATCH_REASON = '未找到匹配的评测配置';
 
-    let isSkillCorrect = targetRecord.is_skill_correct || false;
+    let isSkillCorrect = false; // Reset to false and recalculate based on current config
     let isAnswerCorrect = targetRecord.is_answer_correct || false;
     let judgmentReason = targetRecord.judgment_reason || NO_MATCH_REASON;
 
@@ -271,12 +292,79 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         const matchedConfig = configs.find(c => c.query.trim() === targetRecord.query?.trim());
 
         if (matchedConfig) {
-            const expectedSkill = (matchedConfig.skill || '').trim();
-            if (targetRecord.skills !== undefined && Array.isArray(targetRecord.skills)) {
-                isSkillCorrect = targetRecord.skills.some(
-                    (s) => (String(s || '').trim()) === expectedSkill
-                );
+            const invokedSkillsWithVersion = targetRecord.invokedSkills || [];
+            const invokedSkillsFallback = (targetRecord.skills || []).map(name => ({ name, version: null as number | null }));
+
+            const expectedSkillsList = matchedConfig.expectedSkills || [];
+            
+            if (expectedSkillsList.length > 0) {
+                const skillsToCheck = invokedSkillsWithVersion.length > 0 
+                    ? invokedSkillsWithVersion 
+                    : invokedSkillsFallback;
+                
+                if (skillsToCheck.length > 0) {
+                    let correctInvokedSkills = 0;
+                    
+                    const validExpectedSkills = expectedSkillsList.filter(e => e.skill?.trim());
+                    
+                    const skillNames = validExpectedSkills.map(e => e.skill.trim());
+                    let skillsMap = new Map<string, any>();
+                    
+                    if (skillNames.length > 0) {
+                        try {
+                            const skills = await db.findSkills({
+                                name: { in: skillNames },
+                                user: targetRecord.user || null
+                            });
+                            
+                            for (const skill of skills) {
+                                skillsMap.set(skill.name, skill);
+                            }
+                        } catch (err) {
+                            console.error('[Judgment] Error fetching skills for version check:', err);
+                        }
+                    }
+                    
+                    for (const expected of validExpectedSkills) {
+                        const expectedName = expected.skill.trim();
+                        const expectedVer = expected.version ?? null;
+                        
+                        const matchingInvoked = skillsToCheck.find(
+                            (s) => s.name === expectedName
+                        );
+                        
+                        if (matchingInvoked) {
+                            let isVersionMatch = false;
+                            
+                            if (expectedVer === null) {
+                                isVersionMatch = true;
+                            } else if (matchingInvoked.version !== null) {
+                                isVersionMatch = matchingInvoked.version === expectedVer;
+                            } else {
+                                const skill = skillsMap.get(expectedName);
+                                if (skill) {
+                                    const actualVersion = skill.activeVersion || 0;
+                                    isVersionMatch = actualVersion === expectedVer;
+                                } else {
+                                    isVersionMatch = false;
+                                }
+                            }
+                            
+                            if (isVersionMatch) {
+                                correctInvokedSkills++;
+                                if (!isSkillCorrect) {
+                                    isSkillCorrect = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (validExpectedSkills.length > 0) {
+                        targetRecord.skill_recall_rate = correctInvokedSkills / validExpectedSkills.length;
+                    }
+                }
             }
+            targetRecord.is_skill_correct = isSkillCorrect;
 
             if (targetRecord.final_result !== undefined) {
                 let needsJudgment = true;
@@ -380,6 +468,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             finalResult: targetRecord.final_result,
             skill: targetRecord.skill,
             skills: targetRecord.skills ? JSON.stringify(targetRecord.skills) : null,
+            invokedSkills: targetRecord.invokedSkills ? JSON.stringify(targetRecord.invokedSkills) : null,
             isSkillCorrect: targetRecord.is_skill_correct,
             isAnswerCorrect: targetRecord.is_answer_correct,
             answerScore: targetRecord.answer_score,
@@ -396,6 +485,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             inputTokens: targetRecord.input_tokens,
             outputTokens: targetRecord.output_tokens,
             toolCallErrorCount: targetRecord.tool_call_error_count,
+            skillRecallRate: targetRecord.skill_recall_rate,
             cacheReadInputTokens: targetRecord.cache_read_input_tokens,
             cacheCreationInputTokens: targetRecord.cache_creation_input_tokens,
             maxSingleCallTokens: targetRecord.max_single_call_tokens,
@@ -411,6 +501,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             finalResult: targetRecord.final_result,
             skill: targetRecord.skill,
             skills: targetRecord.skills ? JSON.stringify(targetRecord.skills) : null,
+            invokedSkills: targetRecord.invokedSkills ? JSON.stringify(targetRecord.invokedSkills) : null,
             isSkillCorrect: targetRecord.is_skill_correct,
             isAnswerCorrect: targetRecord.is_answer_correct,
             answerScore: targetRecord.answer_score,
@@ -427,6 +518,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             inputTokens: targetRecord.input_tokens,
             outputTokens: targetRecord.output_tokens,
             toolCallErrorCount: targetRecord.tool_call_error_count,
+            skillRecallRate: targetRecord.skill_recall_rate,
             cacheReadInputTokens: targetRecord.cache_read_input_tokens,
             cacheCreationInputTokens: targetRecord.cache_creation_input_tokens,
             maxSingleCallTokens: targetRecord.max_single_call_tokens,
