@@ -175,11 +175,36 @@ const CustomTooltip = ({ content }: { content: React.ReactNode }) => {
 
 import { useAuth } from '@/lib/auth-context';
 import SkillRegistry from './SkillRegistry';
+import UserGuide, { GuideStep } from './UserGuide';
+import { useUserGuide } from '@/lib/use-user-guide';
+import { getFilteredSteps } from '@/lib/guide-config';
 
 // --- Main Component ---
 export default function Dashboard() {
     const { user, apiKey } = useAuth(); // Destructure apiKey from useAuth
     const [localApiKey, setLocalApiKey] = useState<string | null>(null);
+
+    const {
+        guideState,
+        loading: guideLoading,
+        shouldShowGuide,
+        setShouldShowGuide,
+        markStepSkipped,
+        disableGuide,
+        dismissForToday,
+    } = useUserGuide(user);
+
+    const [guideSteps, setGuideSteps] = useState<GuideStep[]>([]);
+
+    useEffect(() => {
+        if (guideState) {
+            const filtered = getFilteredSteps(
+                guideState.completedSteps,
+                guideState.skippedSteps
+            );
+            setGuideSteps(filtered);
+        }
+    }, [guideState]);
 
     // Setup local state for apiKey after mount to avoid hydration mismatch
     useEffect(() => {
@@ -2884,6 +2909,70 @@ export default function Dashboard() {
 
                         </div>
 
+                        {/* Guide Settings */}
+                        <div style={{ padding: '0 1.5rem 1.5rem' }}>
+                            <div style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '8px', border: '1px solid #334155' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <h4 style={{ margin: '0 0 0.25rem 0', color: '#f8fafc', fontSize: '0.95rem' }}>新手引导</h4>
+                                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
+                                            {guideState?.guideDisabled ? '引导已关闭' : '引导已开启'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (guideState?.guideDisabled) {
+                                                const res = await fetch('/api/guide', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'x-user-id': user!,
+                                                    },
+                                                    body: JSON.stringify({
+                                                        guideDisabled: false,
+                                                        dismissedAt: null,
+                                                    }),
+                                                });
+                                                if (res.ok) {
+                                                    window.location.reload();
+                                                }
+                                            } else {
+                                                const res = await fetch('/api/guide', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'x-user-id': user!,
+                                                    },
+                                                    body: JSON.stringify({
+                                                        currentStep: 0,
+                                                        completedSteps: [],
+                                                        skippedSteps: [],
+                                                        dismissedAt: null,
+                                                    }),
+                                                });
+                                                if (res.ok) {
+                                                    setShowUserModal(false);
+                                                    setShouldShowGuide(true);
+                                                }
+                                            }
+                                        }}
+                                        style={{
+                                            background: guideState?.guideDisabled ? '#4ade80' : '#38bdf8',
+                                            border: 'none',
+                                            color: '#0f172a',
+                                            padding: '0.5rem 1rem',
+                                            borderRadius: '6px',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    >
+                                        {guideState?.guideDisabled ? '启用引导' : '重新开始引导'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Modal Footer */}
                         <div style={{ padding: '1.25rem 1.5rem', background: '#0f172a', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                             <button
@@ -2967,6 +3056,23 @@ export default function Dashboard() {
         .dropdown-content { display: none; }
         .dropdown-trigger:hover + .dropdown-content, .dropdown-content:hover { display: block; }
       `}</style>
+
+            {/* User Guide */}
+            {shouldShowGuide && guideSteps.length > 0 && !guideLoading && (
+                <UserGuide
+                    steps={guideSteps}
+                    onComplete={async () => {
+                        setShouldShowGuide(false);
+                        await dismissForToday();
+                    }}
+                    onSkip={async (stepId) => {
+                        await markStepSkipped(stepId);
+                    }}
+                    onDontShowAgain={async () => {
+                        await disableGuide();
+                    }}
+                />
+            )}
         </div >
     );
 }
