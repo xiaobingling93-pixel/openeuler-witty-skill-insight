@@ -687,36 +687,8 @@ function DetailPage() {
     const [editResultValue, setEditResultValue] = useState('');
     const [resultSaveStatus, setResultSaveStatus] = useState<{ id: string; status: 'saving' | 'ok' | 'error'; msg?: string } | null>(null);
 
-    const [feedbackComments, setFeedbackComments] = useState<Record<string, string>>({});
     const [focusedStep, setFocusedStep] = useState<number | null>(null);
     const [showContextWindowChart, setShowContextWindowChart] = useState(false);
-
-    const submitDetailFeedback = async (item: Execution, type: 'like' | 'dislike' | null, comment?: string) => {
-        const taskId = item.task_id || item.upload_id || '';
-        const currentComment = feedbackComments[taskId] || item.user_feedback?.comment || '';
-        const newFeedback = { type, comment: comment !== undefined ? comment : currentComment };
-
-        // Optimistic Update
-        const newData = allData.map(d =>
-            (d.task_id === item.task_id || d.upload_id === item.upload_id)
-                ? { ...d, user_feedback: newFeedback }
-                : d
-        );
-        setAllData(newData);
-
-        try {
-            await fetch('/api/data', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    task_id: item.task_id,
-                    upload_id: item.upload_id,
-                    user_feedback: newFeedback
-                })
-            });
-            alert('保存成功');
-        } catch (e) { console.error(e); }
-    };
 
     // Auto-fetch expanded session
     useEffect(() => {
@@ -2181,59 +2153,6 @@ function DetailPage() {
                                     onStepClick={setFocusedStep}
                                 />
 
-                                {/* User Feedback */}
-                                <div style={{ marginBottom: '2rem', padding: '1.5rem', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
-                                    <h4 style={{ ...sectionHeader, marginBottom: '1rem' }}>用户反馈 (User Feedback)</h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, 'like'); }}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                    background: (item.user_feedback?.type === 'like') ? '#38bdf8' : '#0f172a',
-                                                    color: (item.user_feedback?.type === 'like') ? '#0f172a' : '#94a3b8',
-                                                    border: '1px solid #334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer',
-                                                    fontWeight: (item.user_feedback?.type === 'like') ? 'bold' : 'normal',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                👍 Like
-                                            </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, 'dislike'); }}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                    background: (item.user_feedback?.type === 'dislike') ? '#f87171' : '#0f172a',
-                                                    color: (item.user_feedback?.type === 'dislike') ? '#0f172a' : '#94a3b8',
-                                                    border: '1px solid #334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer',
-                                                    fontWeight: (item.user_feedback?.type === 'dislike') ? 'bold' : 'normal',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                👎 Dislike
-                                            </button>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                                            <textarea
-                                                value={feedbackComments[taskId] !== undefined ? feedbackComments[taskId] : (item.user_feedback?.comment || '')}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setFeedbackComments(prev => ({ ...prev, [taskId]: val }));
-                                                }}
-                                                onClick={e => e.stopPropagation()}
-                                                placeholder="添加评论 (可选)..."
-                                                style={{ flex: 1, minHeight: '60px', padding: '8px', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '4px', fontSize: '0.9rem' }}
-                                            />
-                                            <button
-                                                className="btn-primary"
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, item.user_feedback?.type || null, feedbackComments[taskId]); }}
-                                                style={{ padding: '8px 16px', fontSize: '0.9rem', height: 'fit-content', whiteSpace: 'nowrap', background: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                                            >
-                                                保存评论
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
 
                                     {/* Runtime Metrics */}
                                     {(item.llm_call_count != null || item.tool_call_count != null || item.input_tokens != null || item.output_tokens != null || item.tool_call_error_count != null) && (
