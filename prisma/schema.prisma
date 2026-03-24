@@ -155,3 +155,16 @@ model ExecutionMatch {
   matchedAt       DateTime @default(now())
 }
 
+model UserGuideState {
+  id                String   @id @default(cuid())
+  user              String   @unique
+  guideDisabled     Boolean  @default(false)
+  currentStep       Int      @default(0)
+  completedSteps    String   @default("[]")
+  skippedSteps      String   @default("[]")
+  lastShownAt       DateTime?
+  dismissedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+

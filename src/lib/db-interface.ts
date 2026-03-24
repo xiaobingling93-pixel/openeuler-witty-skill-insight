@@ -55,6 +55,11 @@ export interface DatabaseAdapter {
     findExecutionMatch(executionId: string): Promise<any>;
     upsertExecutionMatch(data: any): Promise<any>;
 
+    // UserGuideState operations
+    findUserGuideState(user: string): Promise<any>;
+    upsertUserGuideState(user: string, data: any): Promise<any>;
+    updateUserGuideState(user: string, data: any): Promise<any>;
+
     // Raw access if needed (use sparingly)
     getClient(): PrismaClient | Pool;
 }
@@ -244,6 +249,22 @@ class PrismaAdapter implements DatabaseAdapter {
             create: data,
             update: data
         });
+    }
+
+    async findUserGuideState(user: string) {
+        return this.client.userGuideState.findUnique({ where: { user } });
+    }
+
+    async upsertUserGuideState(user: string, data: any) {
+        return this.client.userGuideState.upsert({
+            where: { user },
+            update: data,
+            create: { user, ...data }
+        });
+    }
+
+    async updateUserGuideState(user: string, data: any) {
+        return this.client.userGuideState.update({ where: { user }, data });
     }
 }
 
@@ -827,6 +848,67 @@ class OpenGaussAdapter implements DatabaseAdapter {
         } finally {
             client.release();
         }
+    }
+
+    async findUserGuideState(user: string) {
+        const res = await this.query('SELECT * FROM "UserGuideState" WHERE "user" = $1', [user]);
+        return res.rows[0] || null;
+    }
+
+    async upsertUserGuideState(user: string, data: any) {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const checkRes = await client.query('SELECT * FROM "UserGuideState" WHERE "user" = $1', [user]);
+            
+            let result;
+            if (checkRes.rows.length > 0) {
+                const keys = Object.keys(data);
+                if (keys.length > 0) {
+                    const setClause = keys.map((k, i) => `"${k}" = $${i + 2}`).join(', ');
+                    const values = keys.map(k => data[k]);
+                    const uRes = await client.query(
+                        `UPDATE "UserGuideState" SET ${setClause}, "updatedAt" = CURRENT_TIMESTAMP WHERE "user" = $1 RETURNING *`,
+                        [user, ...values]
+                    );
+                    result = uRes.rows[0];
+                } else {
+                    result = checkRes.rows[0];
+                }
+            } else {
+                const id = uuidv4();
+                const keys = Object.keys(data);
+                const values = Object.values(data);
+                const columns = ['id', 'user', ...keys].map(k => `"${k}"`).join(', ');
+                const placeholders = keys.map((_, i) => `$${i + 3}`).join(', ');
+                const cRes = await client.query(
+                    `INSERT INTO "UserGuideState" (${columns}) VALUES ($1, $2, ${placeholders}) RETURNING *`,
+                    [id, user, ...values]
+                );
+                result = cRes.rows[0];
+            }
+            await client.query('COMMIT');
+            return result;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    }
+
+    async updateUserGuideState(user: string, data: any) {
+        const keys = Object.keys(data);
+        if (keys.length === 0) return null;
+        
+        const setClause = keys.map((k, i) => `"${k}" = $${i + 2}`).join(', ');
+        const values = keys.map(k => data[k]);
+        
+        const res = await this.query(
+            `UPDATE "UserGuideState" SET ${setClause}, "updatedAt" = CURRENT_TIMESTAMP WHERE "user" = $1 RETURNING *`,
+            [user, ...values]
+        );
+        return res.rows[0] || null;
     }
 }
 
