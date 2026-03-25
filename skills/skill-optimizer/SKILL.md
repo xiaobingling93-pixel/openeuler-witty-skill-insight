@@ -9,6 +9,39 @@ description: Use when optimizing Agent Skill definitions, including static compl
 
 本技能用于优化 Agent Skill 定义文件（SKILL.md），通过静态分析、质量评估和运行时反馈来持续改进 Skill 的质量。该框架支持"冷/热"双模优化架构，确保 Skill 从语法合规到业务逻辑的全面优化。
 
+## 快速开始（Quick Start）
+
+**首次使用请按以下步骤操作：**
+
+```bash
+# 1. 进入 skill-optimizer 目录（必须先进入此目录！）
+cd /path/to/.opencode/skills/skill-optimizer
+
+# 2. 检查环境并安装依赖（会自动创建虚拟环境）
+./scripts/opt.sh --help
+
+# 3. 自动检测并配置模型（或手动配置 .env 文件）
+uv run python scripts/model_config_detector.py
+
+# 4. 测试模型连通性
+uv run python scripts/test_model_connectivity.py --env-file .env
+
+# 5. 执行优化
+./scripts/opt.sh --mode static --input /path/to/your/skill_dir
+```
+
+**关键提示：**
+- ⚠️ **所有命令必须在 skill-optimizer 目录下执行**
+- ⚠️ **使用 `uv run python scripts/xxx.py` 确保在正确的虚拟环境中执行**
+- ✅ **推荐直接使用 `./scripts/opt.sh` 包装脚本（会自动处理环境）**
+- ✅ **虚拟环境 `.opt` 会在首次运行时自动创建**
+
+**重要提示**：
+- ⏱️ 优化过程涉及 LLM 调用，需要较长时间
+- 静态优化通常需要 1-3 分钟
+- 动态/混合优化可能需要 3-8 分钟
+- 调用方 agent 应设置足够的超时时间（建议 5-10 分钟）
+
 ## 优化框架架构
 
 ### 核心组件
@@ -50,6 +83,41 @@ description: Use when optimizing Agent Skill definitions, including static compl
 
 允许人类专家直接提供自然语言建议。该建议会被作为最高优先级的 reflection 传递给 Mutator，强制 LLM 在修改代码时遵循该指令。
 
+## 多轮交互优化
+
+**重要特性**：优化完成后，用户可以继续发送消息对skill进行修改，实现多轮交互式优化。
+
+### 工作流程
+
+1. **首次优化**：用户请求优化skill，系统执行优化并显示diff
+2. **继续修改**：用户发送修改请求（如"请把描述改成更简洁的版本"）
+3. **再次优化**：系统基于最新版本继续优化，并再次显示diff
+4. **循环迭代**：重复步骤2-3，直到用户满意
+
+### 使用示例
+
+```
+用户: 帮我优化这个skill
+系统: [执行优化，显示diff] ✅ 优化完成！
+
+用户: 描述太长了，请精简一下
+系统: [基于优化后的版本继续修改，显示diff] ✅ 已精简描述！
+
+用户: 请添加一个使用示例
+系统: [添加示例，显示diff] ✅ 已添加示例！
+```
+
+### 实现方式
+
+当用户在优化完成后继续发送修改请求时：
+1. 识别这是一个后续修改请求
+2. 使用 `--feedback` 参数传递用户反馈
+3. 执行优化并显示diff
+
+```bash
+./scripts/opt.sh --mode static --input <skill-path> --feedback "<用户反馈内容>"
+```
+
 ### Runtime Feedback (运行时反馈)
 
 解析测试报告中的 `skill_issues` (技能缺陷) 和 `failures` (运行时异常)，将非结构化的错误描述转化为可执行的优化建议。
@@ -58,16 +126,36 @@ description: Use when optimizing Agent Skill definitions, including static compl
 
 在运行任何优化命令之前，请先完成以下准备工作。
 
-### 第1步：运行环境依赖检查
+### 第0步：进入 skill-optimizer 目录
+
+**重要**：所有命令都必须在 skill-optimizer 目录下执行。
+
+```bash
+# 进入 skill-optimizer 目录（根据实际路径调整）
+cd /path/to/.opencode/skills/skill-optimizer
+```
+
+### 第1步：检查环境并安装依赖（推荐使用包装脚本）
 
 **Python 工具链依赖**：需要预先安装 `uv` 命令行工具。
-首次运行推荐直接使用集成包装脚本，它会自动处理 Python 虚拟环境并安装依赖：
+推荐直接使用集成包装脚本，它会自动处理 Python 虚拟环境并安装依赖：
 
 ```bash
 ./scripts/opt.sh --help
 ```
 
-如果检测到提示“未找到 'uv' 命令”，请按如下格式询问用户：
+**说明**：
+- 脚本会自动检查 `uv` 是否安装
+- 自动创建 `.opt` 虚拟环境
+- 自动安装所有依赖到虚拟环境中
+- 使用 `uv run` 确保所有后续命令都在正确的环境中执行
+
+**并行环境检查（新特性）**：
+- 首次运行时，脚本会**并行执行**依赖安装和模型配置检测，显著减少启动时间
+- 使用 `--serial` 参数可禁用并行模式：`./scripts/opt.sh --serial --mode static --input ...`
+- 并行模式下会显示进度指示器
+
+如果检测到提示"未找到 'uv' 命令"，请按如下格式询问用户：
 
 ```
 Question: "Skill Optimizer 需要 'uv' 作为 Python 环境管理器，但当前系统未安装。是否现在安装？"
@@ -86,7 +174,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 运行模型配置检测脚本，自动从当前 AI 平台获取 API Key：
 
 ```bash
-python scripts/model_config_detector.py
+# 使用 uv run 确保在虚拟环境中执行
+uv run python scripts/model_config_detector.py
 ```
 
 该脚本会按优先级检测以下平台：
@@ -103,16 +192,16 @@ python scripts/model_config_detector.py
 
 ```
 Question: "未找到有效的模型配置 (API Key)。请选择如何提供配置？"
-Options: "方式1（推荐）：提供 DeepSeek API Key", "方式2：提供通用 LLM API Key", "取消操作"
+Options: "方式1（推荐）：）提供 DeepSeek API Key", "方式2：：提供通用 LLM API Key", "取消操作"
 ```
 
 用户选择后，将配置写入本技能根目录的 `.env` 文件（请注意**必须**放在 `skill-optimizer` 的首层目录中）：
 
 ```bash
 # 注意：务必确保是将配置写入到 skill-optimizer 目录下的 .env 中
-echo "DEEPSEEK_API_KEY=sk-xxxx" >> skills/skill-optimizer/.env
-echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/" >> skills/skill-optimizer/.env
-echo "DEEPSEEK_MODEL=deepseek-chat" >> skills/skill-optimizer/.env
+echo "DEEPSEEK_API_KEY=sk-xxxx" >> .env
+echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/" >> .env
+echo "DEEPSEEK_MODEL=deepseek-chat" >> .env
 ```
 
 ### 第3步：模型连通性测试
@@ -120,7 +209,8 @@ echo "DEEPSEEK_MODEL=deepseek-chat" >> skills/skill-optimizer/.env
 在获取到模型配置后，必须先进行模型连通性测试，以确保后续操作顺利执行：
 
 ```bash
-python scripts/test_model_connectivity.py --env-file skills/skill-optimizer/.env
+# 使用 uv run 确保在虚拟环境中执行
+uv run python scripts/test_model_connectivity.py --env-file .env
 ```
 
 如果测试通过，再进行后续任务。
@@ -211,10 +301,12 @@ Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 b
 
 **自动配置（推荐）**
 
-运行 `python scripts/model_config_detector.py` 自动检测并配置 API Key。支持的平台：
+运行 `uv run python scripts/model_config_detector.py` 自动检测并配置 API Key。支持的平台：
 - Claude Code（检测 `ANTHROPIC_AUTH_TOKEN` 环境变量）
 - OpenCode（运行 `node scripts/opencode-model-detector.cjs`）
 - Cursor/Windsurf（检测 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 环境变量）
+
+**注意**：使用 `uv run` 确保在虚拟环境中执行脚本。
 
 **手动配置**
 
@@ -227,6 +319,8 @@ Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 b
 ### Witty Insight 平台对接
 
 用于获取历史运行日志（Dynamic 模式需要）。在获取时，优化器会自动从 `~/.witty/.env` 中的 `WITTY_INSIGHT_HOST` 读取平台服务器 IP 进行请求，不需要再在本技能下重复配置。
+
+**注意**：`WITTY_INSIGHT_HOST` 环境变量仅在**动态模式或混合模式**下需要。静态模式下不会检查此变量，因此即使未配置也可以正常运行静态优化。
 
 > **⚠️ 环境配置重要提示**：所有以上介绍的环境变量，**必须**配置在 `skills/skill-optimizer/.env` 文件中。如果不确定位置，优化器会在抛出错误时提示你预期的 `.env` 绝对路径。
 
@@ -281,51 +375,87 @@ Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 b
 **用户请求：** "帮我优化一下这个 Skill 文件 path/to/my-skill/SKILL.md"
 
 **Agent响应：**
-1. 运行包装脚本检查环境：`./scripts/opt.sh --help`
-2. 自动获取模型配置：`python scripts/model_config_detector.py`
-3. 确认输入路径指向包含 SKILL.md 的目录
-4. 执行静态优化：`./scripts/opt.sh --mode static --input path/to/my-skill`
-5. 等待优化完成，查看生成的优化报告
-6. 询问用户是否加载到本地或上传
+1. 进入 skill-optimizer 目录：`cd /path/to/.opencode/skills/skill-optimizer`
+2. 运行包装脚本检查环境：`./scripts/opt.sh --help`
+3. 自动获取模型配置：`uv run python scripts/model_config_detector.py`
+4. 确认输入路径指向包含 SKILL.md 的目录
+5. 执行静态优化：`./scripts/opt.sh --mode static --input path/to/my-skill`
+6. 等待优化完成，查看生成的优化报告
+7. 询问用户是否加载到本地或上传
 
 ### 示例2：基于运行日志优化已有 Skill
 
 **用户请求：** "这个 Skill 运行了几次有问题，帮我根据运行日志优化一下"
 
 **Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 确认 Skill 名称和路径
-4. 执行动态优化：`./scripts/opt.sh --mode dynamic --input path/to/my-skill`
-5. 优化器会自动获取历史运行日志
-6. 返回优化结果和版本号
+1. 进入 skill-optimizer 目录：`cd /path/to/.opencode/skills/skill-optimizer`
+2. 运行包装脚本检查环境：`./scripts/opt.sh --help`
+3. 自动获取模型配置：`uv run python scripts/model_config_detector.py`
+4. 确认 Skill 名称和路径
+5. 执行动态优化：`./scripts/opt.sh --mode dynamic --input path/to/my-skill`
+6. 优化器会自动获取历史运行日志
+7. 返回优化结果和版本号
 
 ### 示例3：带人工反馈的优化
 
 **用户请求：** "根据我提供的反馈优化这个 Skill，反馈内容是..."
 
 **Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 将用户的反馈内容写入临时文件
-4. 执行优化：`./scripts/opt.sh --mode static --input path/to/my-skill --feedback path/to/feedback.txt`
-5. 优化器会优先处理人工反馈
-6. 返回优化结果
+1. 进入 skill-optimizer 目录：`cd /path/to/.opencode/skills/skill-optimizer`
+2. 运行包装脚本检查环境：`./scripts/opt.sh --help`
+3. 自动获取模型配置：`uv run python scripts/model_config_detector.py`
+4. 将用户的反馈内容写入临时文件
+5. 执行优化：`./scripts/opt.sh --mode static --input path/to/my-skill --feedback path/to/feedback.txt`
+6. 优化器会优先处理人工反馈
+7. 返回优化结果
 
 ### 示例4：混合模式优化
 
 **用户请求：** "全面优化这个 Skill，包括静态检查和运行日志分析"
 
 **Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 执行混合优化：`./scripts/opt.sh --mode hybrid --input path/to/my-skill`
-4. 先执行静态优化，再执行热启动优化
-5. 返回完整的优化结果
+1. 进入 skill-optimizer 目录：`cd /path/to/.opencode/skills/skill-optimizer`
+2. 运行包装脚本检查环境：`./scripts/opt.sh --help`
+3. 自动获取模型配置：`uv run python scripts/model_config_detector.py`
+4. 执行混合优化：`./scripts/opt.sh --mode hybrid --input path/to/my-skill`
+5. 先执行静态优化，再执行热启动优化
+6. 返回完整的优化结果
 
 ## 优化完成后的后续步骤
 
-### 第5步：询问是否加载到本地项目（推荐）
+### 第5步：显示优化Diff对比（自动）
+
+**重要**：每次优化完成后，必须自动弹出Diff视图展示优化前后的变化。
+
+执行以下命令启动Diff查看器：
+
+```bash
+uv run python scripts/diff_viewer.py --snapshots <快照目录路径> --title "<skill名称>"
+```
+
+**示例**：
+```bash
+# skill-optimizer 优化过程中会自动管理历史版本的快照目录
+# 使用 --snapshots 可以直接加载整个快照库，在自动打开的网页端能够自由切换比对任意历史版本：
+uv run python scripts/diff_viewer.py --snapshots /path/to/my-skill-snapshots --title "my-skill"
+
+# 【Fallback】如果你只是想临时、快速地对比两个特定的目录或文件（不依赖快照机制）：
+uv run python scripts/diff_viewer.py --base /path/to/my-skill --current /path/to/my-skill-v1 --title "my-skill"
+```
+
+**Diff查看器功能**：
+- 自动打开浏览器，支持多种视图（Side-by-side、Unified）并支持自动折叠
+- 精准渲染整个Skill目录的差别，包含脚本与文档内容
+- 具备词级高亮和语法高亮，文件级别支持状态标记（MODIFIED / ADDED / REMOVED）
+- 内置代码行数统计与自动计算
+- 集成了 `Accept`、`Revise`、`Revert` 直接生成反馈指令复制的功能
+
+**如果用户希望保存静态HTML文件（不自动打开浏览器）**：
+```bash
+uv run python scripts/diff_viewer.py <old_dir> <new_dir> --static diff.html --title "skill-name"
+```
+
+### 第6步：询问是否加载到本地项目（推荐）
 
 在技能优化成功后，询问用户是否将优化后的skill直接加载到当前项目的 `.opencode/skills` 目录下，以便立即使用。
 
@@ -422,9 +552,11 @@ Options: "收到"
 **原因**：虚拟环境未创建或未激活，依赖未安装到正确的环境中。
 
 **解决：**
-1. 创建虚拟环境：`uv venv .opt`（只需执行一次）
-2. 激活环境：`source .opt/bin/activate`（每次运行前执行）
-3. 安装依赖：`uv pip install -r requirements.txt`（只需执行一次）
+1. 确保在 skill-optimizer 目录下：`cd /path/to/.opencode/skills/skill-optimizer`
+2. 使用包装脚本自动处理环境：`./scripts/opt.sh --help`
+3. 或手动创建虚拟环境：`uv venv .opt`（只需执行一次）
+4. 使用 `uv run` 执行命令：`uv run python scripts/xxx.py`（推荐）
+5. 或手动激活环境：`source .opt/bin/activate`（每次运行前执行）
 
 ### 问题2：未安装 uv
 
@@ -444,7 +576,7 @@ pip install uv
 **错误信息**：`Neither DEEPSEEK_API_KEY nor OPENAI_API_KEY set.`
 
 **解决：**
-1. 运行自动检测：`python scripts/model_config_detector.py`
+1. 运行自动检测：`uv run python scripts/model_config_detector.py`
 2. 或手动编辑 `.env` 文件，填写 API Key
 
 ### 问题4：找不到 SKILL.md
@@ -463,6 +595,18 @@ pip install uv
 - 检查 `.env` 文件中的 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`
 - 确认网络连接正常
 - 验证 `DEEPSEEK_BASE_URL` 设置正确
+
+### 问题6：模型调用超时
+
+**错误信息**：`TimeoutError` 或请求长时间无响应
+
+**原因：** 模型推理时间较长，默认超时时间不够
+
+**解决：**
+- **部分慢速模型**：响应时间波动大（实测 3-47 秒不等），已设置 180 秒超时
+- **其他慢速模型**：可以调整 `scripts/main.py` 中的 `request_timeout` 参数（默认 300 秒）
+- **连通性测试超时**：已调整 `scripts/test_model_connectivity.py` 中的超时为 180 秒
+- 如果仍然超时，检查网络连接或联系服务提供商
 
 ### 问题6：无法获取运行日志
 

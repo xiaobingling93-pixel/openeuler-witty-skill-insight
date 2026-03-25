@@ -148,7 +148,7 @@ python scripts/main.py --mode static --input path/to/your/skill_dir --feedback p
 确保已安装以下 Python 包：
 
 ```bash
-pip install langchain langchain-openai langfuse python-dotenv httpx
+pip install langchain langchain-openai python-dotenv httpx
 ```
 
 ### 6.2 环境变量配置 (.env)
@@ -172,12 +172,10 @@ pip install langchain langchain-openai langfuse python-dotenv httpx
 | `MODEL_PROXY_IP`     | 是   | 平台服务器 IP 地址               |
 | `WITTY_INSIGHT_USER` | 是   | 用户邮箱标识，用于上传和查询日志 |
 
-#### 监控与反馈 (可选)
+#### 人工反馈配置 (可选)
 
 | 变量名                | 必选 | 说明                              |
 | :-------------------- | :--- | :-------------------------------- |
-| `LANGFUSE_PUBLIC_KEY` | 否   | Langfuse 公钥，用于记录优化 Trace |
-| `LANGFUSE_SECRET_KEY` | 否   | Langfuse 私钥                     |
 | `HUMAN_FEEDBACK_FILE` | 否   | 默认的人工反馈文件路径            |
 
 #### 路径与策略配置 (参考)

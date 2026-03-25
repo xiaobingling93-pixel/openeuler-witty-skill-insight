@@ -14,7 +14,4 @@ requests>=2.31.0
 # Environment Configuration
 python-dotenv>=1.0.0
 
-# Optional: Langfuse for Trace Recording
-langfuse>=2.0.0
-
 # Python >= 3.11 is recommended

@@ -21,9 +21,6 @@ from engine.report_generator import OptimizationReportGenerator
 from optimizer import SkillOptimizer
 from witty_insight_api import get_skill_logs
 
-# Load environment variables
-load_dotenv(ENV_FILE)
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -31,56 +28,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Langfuse Integration
-try:
-    from langfuse import Langfuse
-
-    HAS_LANGFUSE = True
-
-except ImportError:
-    HAS_LANGFUSE = False
-
-langfuse = None
-if (
-    HAS_LANGFUSE
-    and os.getenv("LANGFUSE_PUBLIC_KEY")
-    and os.getenv("LANGFUSE_SECRET_KEY")
-):
-    try:
-        langfuse = Langfuse()
-        logger.info("Langfuse initialized for Optimization Loop.")
-    except Exception as e:
-        logger.error(f"Failed to init Langfuse: {e}")
-else:
-    HAS_LANGFUSE = False
-    logger.warning(
-        "Langfuse not initialized. Optimization Loop traces will not be recorded."
-    )
-
-
 # --- LLM Client Setup ---
 class RealLLMClient:
     def __init__(self):
-        env_base_url = os.getenv("DEEPSEEK_BASE_URL")
-        base_url = env_base_url if env_base_url else "https://api.deepseek.com/"
+        # 优先检查 DEEPSEEK 配置
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
 
-        # Determine model
-        model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        if deepseek_api_key:
+            # 使用 DeepSeek 配置
+            base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/")
+            model_name = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            api_key = deepseek_api_key
+        elif openai_api_key:
+            # 使用 OpenAI 配置
+            base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            model_name = os.getenv("OPENAI_MODEL", "gpt-4")
+            api_key = openai_api_key
+        else:
+            from constants import ENV_FILE
 
-        # Check API Key
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            # Fallback to OPENAI_API_KEY if DEEPSEEK not set (as per some setups)
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                from constants import ENV_FILE
-
-                raise ValueError(
-                    f"\\n❌ Error: Neither DEEPSEEK_API_KEY nor OPENAI_API_KEY is set.\\n"
-                    f"Please configure your AI model API key in the environment file:\\n"
-                    f"   -> {ENV_FILE.absolute()}\\n"
-                    f"Alternatively, you can run './scripts/opt.sh --help' to use the interactive setup."
-                )
+            raise ValueError(
+                f"\n❌ Error: Neither DEEPSEEK_API_KEY nor OPENAI_API_KEY is set.\n"
+                f"Please configure your AI model API key in the environment file:\n"
+                f"   -> {ENV_FILE.absolute()}\n"
+                f"Alternatively, you can run './scripts/opt.sh --help' to use the interactive setup."
+            )
 
         self.llm = ChatOpenAI(
             model=model_name,
@@ -107,6 +80,51 @@ class RealLLMClient:
 # --- Core Logic Functions ---
 
 
+def validate_skill_file(file_path: Path) -> tuple[bool, str]:
+    """
+    验证 SKILL.md 文件的完整性
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not file_path.exists():
+        return False, f"文件不存在: {file_path}"
+    
+    content = file_path.read_text(encoding='utf-8')
+    if not content or len(content) < 100:
+        return False, f"文件内容过短: {len(content)} 字符"
+    
+    if not content.startswith('---'):
+        return False, "缺少 YAML frontmatter"
+    
+    frontmatter_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    if not frontmatter_match:
+        return False, "frontmatter 格式错误"
+    
+    frontmatter = frontmatter_match.group(1)
+    if 'name:' not in frontmatter:
+        return False, "frontmatter 缺少 name 字段"
+    
+    return True, ""
+
+
+def validate_auxiliary_file(file_path: Path) -> tuple[bool, str]:
+    """
+    验证辅助文件的完整性
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not file_path.exists():
+        return False, f"文件不存在: {file_path}"
+    
+    content = file_path.read_text(encoding='utf-8')
+    if not content or len(content.strip()) == 0:
+        return False, f"文件内容为空: {file_path}"
+    
+    return True, ""
+
+
 def update_skill_name_in_md(content: str, new_name: str) -> str:
     """Update skill name in SKILL.md content."""
     # Try YAML frontmatter first
@@ -124,6 +142,84 @@ def update_skill_name_in_md(content: str, new_name: str) -> str:
         return re.sub(pattern, f"# {new_name}", content, count=1, flags=re.MULTILINE)
 
     return content
+
+
+def integrate_auxiliary_references(skill_content: str, auxiliary_files: dict[str, str]) -> str:
+    """
+    在 SKILL.md 中自动添加对辅助文件的引用
+    
+    Args:
+        skill_content: SKILL.md 的内容
+        auxiliary_files: 辅助文件字典 {相对路径: 内容}
+    
+    Returns:
+        更新后的 SKILL.md 内容
+    """
+    if not auxiliary_files:
+        return skill_content
+    
+    has_section = any(
+        section in skill_content.lower() 
+        for section in ['## 辅助文件', '## 相关文件', '## auxiliary files', '## related files']
+    )
+    
+    if has_section:
+        return skill_content
+    
+    section_header = "\n\n## 辅助文件\n\n以下文件由优化器自动创建，用于支持本 Skill 的功能：\n\n"
+    
+    file_list = ""
+    for rel_path in sorted(auxiliary_files.keys()):
+        if rel_path.endswith('.py'):
+            desc = "Python 脚本"
+        elif rel_path.endswith('.sh'):
+            desc = "Shell 脚本"
+        elif rel_path.endswith('.md'):
+            desc = "参考文档"
+        else:
+            desc = "辅助文件"
+        
+        file_list += f"- **{rel_path}** - {desc}\n"
+    
+    return skill_content.rstrip() + section_header + file_list
+
+
+def print_completion_summary(
+    success: bool,
+    output_dir: Path,
+    skill_name: str,
+    diagnoses_count: int,
+    auxiliary_files: list[str],
+    mode: str
+):
+    """
+    输出清晰明确的完成状态摘要
+    """
+    print("\n" + "=" * 60)
+    
+    if success:
+        print("✅ 优化完成！")
+    else:
+        print("⚠️ 优化部分完成")
+    
+    print("-" * 60)
+    print(f"Skill 名称: {skill_name}")
+    print(f"优化模式: {mode}")
+    print(f"诊断数量: {diagnoses_count}")
+    print(f"输出目录: {output_dir}")
+    
+    if auxiliary_files:
+        print(f"\n生成的文件:")
+        print(f"  - SKILL.md")
+        for f in auxiliary_files:
+            print(f"  - {f}")
+    
+    if diagnoses_count > 0:
+        print(f"\n诊断报告:")
+        print(f"  - diagnoses.json")
+        print(f"  - OPTIMIZATION_REPORT.md")
+    
+    print("=" * 60)
 
 
 def run_optimizer(
@@ -144,6 +240,8 @@ def run_optimizer(
     Returns:
         List[Path]: List of paths to the optimized skill directories
     """
+
+    load_dotenv(ENV_FILE)
 
     # 1. Initialize Components
     try:
@@ -184,24 +282,7 @@ def run_optimizer(
     # 4. Processing Loop
     for skill_file in skill_files:
         logger.info(f"Processing: {skill_file}")
-
-        # Create Trace for this Skill Optimization Run
-        trace_id = None
-        if langfuse:
-            with langfuse.start_as_current_observation(
-                as_type="span",
-                name=f"Optimize Skill: {skill_file.parent.name}",
-                metadata={"skill_file": str(skill_file), "mode": mode},
-            ) as root_span:
-                trace_id = langfuse.get_current_trace_id()
-                print(f"This skill is recording with trace_id: {root_span.trace_id}")
-                root_span.update(
-                    input={
-                        "mode": mode,
-                        "skill_path": str(skill_file),
-                        "human_feedback": human_feedback,
-                    }
-                )
+        logger.info(f"Mode: {mode}")
 
         try:
             # Initialize variables
@@ -218,31 +299,34 @@ def run_optimizer(
 
             if mode == "static":
                 logger.info("Mode: Static (Cold Start)")
+                print("\n⏳ [进度] 正在执行静态评估...")
+                print("⏳ [进度] 预计需要 1-3 分钟，请耐心等待...")
+                print("⏳ [进度] LLM 调用中...\n")
                 optimized_genome, diagnoses = optimizer.optimize_static(
-                    skill_file, trace_id=trace_id, human_feedback=human_feedback
+                    skill_file, human_feedback=human_feedback
                 )
 
             elif mode == "dynamic":
                 logger.info("Mode: Dynamic (Experience Crystallization)")
-
-                # try to get history excution report
+                print("\n⏳ [进度] 正在获取历史执行记录...")
                 report_items = get_skill_logs(skill=initial_genome.name, limit=3)
-
-                # optimize_dynamic takes (genome, report)
+                print("⏳ [进度] 正在执行动态优化（经验结晶）...")
+                print("⏳ [进度] 预计需要 3-5 分钟，请耐心等待...")
+                print("⏳ [进度] LLM 调用中...\n")
                 optimized_genome, diagnoses = optimizer.optimize_dynamic(
-                    genome=initial_genome, report_items=report_items, trace_id=trace_id
+                    genome=initial_genome, report_items=report_items
                 )
 
             elif mode == "hybrid":
                 logger.info("Mode: Hybrid (Static + Dynamic)")
-
-                # try to get history excution report
+                print("\n⏳ [进度] 正在获取历史执行记录...")
                 report_items = get_skill_logs(skill=initial_genome.name)
-
+                print("⏳ [进度] 正在执行混合优化（静态 + 动态）...")
+                print("⏳ [进度] 预计需要 5-8 分钟，请耐心等待...")
+                print("⏳ [进度] LLM 调用中...\n")
                 optimized_genome, diagnoses = optimizer.optimize_hybrid(
                     skill_path=skill_file,
                     report_items=report_items,
-                    trace_id=trace_id,
                     human_feedback=human_feedback,
                 )
 
@@ -281,11 +365,19 @@ def run_optimizer(
                     logger.warning(
                         "Optimized SKILL.md content is suspiciously short or empty!"
                     )
+                
+                new_content = integrate_auxiliary_references(new_content, optimized_genome.files)
 
                 save_file = skill_save_dir / "SKILL.md"
                 with open(save_file, "w", encoding="utf-8") as f:
                     f.write(new_content)
                 logger.info(f"Optimized skill saved to: {save_file}")
+                
+                is_valid, error_msg = validate_skill_file(save_file)
+                if not is_valid:
+                    logger.warning(f"SKILL.md 验证失败: {error_msg}")
+                else:
+                    logger.info(f"SKILL.md 验证通过: {save_file}")
 
                 # Save Auxiliary Files (scripts, references, etc.)
                 # optimized_genome.files contains relative paths -> content
@@ -300,6 +392,12 @@ def run_optimizer(
                     with open(dest_path, "w", encoding="utf-8") as f:
                         f.write(file_content)
                     logger.info(f"Saved auxiliary file: {rel_path}")
+                    
+                    is_valid, error_msg = validate_auxiliary_file(dest_path)
+                    if not is_valid:
+                        logger.warning(f"辅助文件验证失败: {error_msg}")
+                    else:
+                        logger.info(f"辅助文件验证通过: {rel_path}")
             else:
                 logger.warning("Optimization returned None. Skipping save.")
 
@@ -321,19 +419,7 @@ def run_optimizer(
                 with open(diagnoses_file, "w", encoding="utf-8") as f:
                     json.dump(diagnoses_data, f, indent=2, ensure_ascii=False)
                 logger.info(f"Saved diagnoses to: {diagnoses_file}")
-
-                # Report diagnoses to Langfuse
-                if langfuse and trace_id:
-                    with langfuse.start_as_current_observation(
-                        trace_context={
-                            "trace_id": trace_id,
-                        },
-                        name="Diagnoses",
-                    ) as root_span:
-                        root_span.update(
-                            input=len(diagnoses),
-                            output=diagnoses,
-                        )
+                logger.info(f"Total diagnoses: {len(diagnoses)}")
 
             # Generate and Save Optimization Report
             if optimized_genome and diagnoses:
@@ -349,23 +435,13 @@ def run_optimizer(
 
             # Record successful optimization path
             optimized_paths.append(outer_save_dir)
+            logger.info(f"Optimization completed for: {skill_file}")
 
         except Exception as e:
             logger.error(f"Optimization failed for {skill_file}: {e}")
             import traceback
 
             traceback.print_exc()
-            if langfuse and trace_id:
-                # Since we don't have the trace object here directly, we rely on flush or manual client usage
-                # But trace object is local scope.
-                # trace.update(output={"error": str(e)}) # if we had trace object
-                pass
-
-        # Flush Langfuse
-        if langfuse:
-            langfuse.flush()
-
-        logger.info(f"Optimization log uploaded to Langfuse for trace ID: {trace_id}")
 
     return optimized_paths
 

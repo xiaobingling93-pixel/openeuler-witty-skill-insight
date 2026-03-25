@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Optional
 
@@ -8,12 +9,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from prompts.mutation_prompts import GENERAL_FIX_PROMPT, HUMAN_FEEDBACK_TEMPLATE
 
-try:
-    from langfuse.langchain import CallbackHandler
-
-    HAS_LANGFUSE = True
-except ImportError:
-    HAS_LANGFUSE = False
+logger = logging.getLogger(__name__)
 
 
 class DiagnosticMutator:
@@ -173,19 +169,9 @@ class DiagnosticMutator:
                 ),
             )
 
-            # Setup Langfuse Callback
+            # Setup callbacks (empty for now, can be extended)
             callbacks = []
-            if (
-                HAS_LANGFUSE
-                and os.getenv("LANGFUSE_PUBLIC_KEY")
-                and os.getenv("LANGFUSE_SECRET_KEY")
-            ):
-                print(">>> Initializing Langfuse CallbackHandler...")
-                langfuse_handler = CallbackHandler(trace_context={"trace_id": trace_id})
-                callbacks.append(langfuse_handler)
-
-            # Run Agent
-            print(">>> Starting Agentic Mutation Loop (Graph)...")
+            logger.info(">>> Starting Agentic Mutation Loop (Graph)...")
 
             # Use stream() instead of invoke() to capture events
             for event in agent_graph.stream(

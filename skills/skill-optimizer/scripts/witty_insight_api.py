@@ -5,53 +5,84 @@ import sys
 import requests
 from dotenv import load_dotenv
 
-# Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from constants import ENV_FILE
-
-load_dotenv(ENV_FILE)
-
-# Attempt to read global Witty Insight config
-global_env_path = os.path.expanduser("~/.witty/.env")
-if os.path.exists(global_env_path):
-    load_dotenv(
-        global_env_path, override=False
-    )  # Do not override local optimizer .env if it has values
-
-# Resolve base IP: local MODEL_PROXY_IP > global WITTY_INSIGHT_HOST
-base_ip = os.environ.get("MODEL_PROXY_IP") or os.environ.get("WITTY_INSIGHT_HOST")
-
-if not base_ip:
-    raise ValueError(
-        f"\\n❌ Error: Cannot resolve Witty Insight API IP.\\n"
-        f"Neither 'MODEL_PROXY_IP' (in {ENV_FILE.absolute()}) nor 'WITTY_INSIGHT_HOST' (in ~/.witty/.env) is set.\\n"
-        f"This is required for Dynamic/Hybrid modes to fetch historical execution logs."
-    )
-
-# Assume the platform always runs on port 3000 locally or adjust if WITTY_INSIGHT_HOST includes port
-if ":" in base_ip and not base_ip.startswith("http"):
-    BASE_URL = f"http://{base_ip}"
-elif base_ip.startswith("http"):
-    BASE_URL = base_ip
-else:
-    BASE_URL = f"http://{base_ip}:3000"
+_env_loaded = False
+_base_url_cache = None
+_headers_cache = None
 
 
-HEADERS = {
-    "Content-Type": "application/json",
-    "x-witty-api-key": os.environ.get("DEEPSEEK_API_KEY")
-    or os.environ.get("OPENAI_API_KEY")
-    or "",
-}
+def _ensure_env_loaded():
+    """延迟加载环境变量"""
+    global _env_loaded
+    if not _env_loaded:
+        from constants import ENV_FILE
+
+        load_dotenv(ENV_FILE)
+
+        global_env_path = os.path.expanduser("~/.witty/.env")
+        if os.path.exists(global_env_path):
+            load_dotenv(global_env_path, override=False)
+
+        _env_loaded = True
+
+
+def _get_base_url():
+    """获取 API 基础 URL，延迟加载环境变量"""
+    global _base_url_cache
+
+    if _base_url_cache is not None:
+        return _base_url_cache
+
+    _ensure_env_loaded()
+
+    base_ip = os.environ.get("MODEL_PROXY_IP") or os.environ.get("WITTY_INSIGHT_HOST")
+
+    if not base_ip:
+        raise ValueError(
+            f"\n❌ Error: Cannot resolve Witty Insight API IP.\n"
+            f"Neither 'MODEL_PROXY_IP' nor 'WITTY_INSIGHT_HOST' is set.\n"
+            f"This is required for Dynamic/Hybrid modes to fetch historical execution logs."
+        )
+
+    if ":" in base_ip and not base_ip.startswith("http"):
+        _base_url_cache = f"http://{base_ip}"
+    elif base_ip.startswith("http"):
+        _base_url_cache = base_ip
+    else:
+        _base_url_cache = f"http://{base_ip}:3000"
+
+    return _base_url_cache
+
+
+def _get_headers():
+    """获取请求头，延迟加载环境变量"""
+    global _headers_cache
+
+    if _headers_cache is not None:
+        return _headers_cache
+
+    _ensure_env_loaded()
+
+    _headers_cache = {
+        "Content-Type": "application/json",
+        "x-witty-api-key": os.environ.get("DEEPSEEK_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or "",
+    }
+
+    return _headers_cache
 
 
 def get_skill_logs(skill: str, skill_version: int = None, limit: int = 20):
     """
     Get execution logs for a specific skill version.
     """
-    url = f"{BASE_URL}/api/skills/logs"
+    base_url = _get_base_url()
+    headers = _get_headers()
+    
+    url = f"{base_url}/api/skills/logs"
     params = {
         "skill": skill,
         "limit": limit,
@@ -64,7 +95,7 @@ def get_skill_logs(skill: str, skill_version: int = None, limit: int = 20):
     print(f"Params: {json.dumps(params, indent=2, ensure_ascii=False)}")
 
     try:
-        response = requests.get(url, params=params, headers=HEADERS)
+        response = requests.get(url, params=params, headers=headers)
         print(f"Status Code: {response.status_code}")
         try:
             result = response.json()
@@ -81,5 +112,5 @@ def get_skill_logs(skill: str, skill_version: int = None, limit: int = 20):
 
 
 if __name__ == "__main__":
-    print(f"Target Base URL: {BASE_URL}")
+    print(f"Target Base URL: {_get_base_url()}")
     # get_skill_logs("void-gateway-sop")
