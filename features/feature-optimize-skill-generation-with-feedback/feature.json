@@ -1,0 +1,26 @@
+{
+  "name": "optimize-skill-generation-with-feedback",
+  "title": "【feature】【Skill生成】优化 Skill 自动生成能力：引入用户反馈、经验融合",
+  "status": "in-progress",
+  "claimedBy": "paradiseyph",
+  "claimedAt": "2026-03-26T00:10:00Z",
+  "completedAt": "",
+  "worktree": {
+    "path": "",
+    "enabled": false
+  },
+  "platformIssue": {
+    "id": 35,
+    "web_url": "https://atomgit.com/openeuler/witty-skill-insight/issues/35",
+    "title": "【feature】【Skill生成】优化 Skill 自动生成能力：引入用户反馈、经验融合",
+    "state": "open"
+  },
+  "documentation": {
+    "requirements": [],
+    "design": [],
+    "tests": [],
+    "pr": [],
+    "deployment": [],
+    "notes": ""
+  }
+}
