@@ -67,3 +67,6 @@ bun.lock
 
 # debug
 .vscode
+
+# Agent development configuration
+.agentdev/

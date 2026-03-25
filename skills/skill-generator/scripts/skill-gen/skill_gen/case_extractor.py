@@ -5,7 +5,7 @@ import logging
 import pathlib
 import re
 import os
-from typing import List
+from typing import List, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 from .schema import FailureCase

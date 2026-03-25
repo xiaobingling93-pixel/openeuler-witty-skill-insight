@@ -89,6 +89,13 @@ def main() -> int:
         default="single",
         help="生成模式：single (默认，单/多文档生成对应数量Skill) / merge (多文档合并生成一个Skill)",
     )
+    parser.add_argument(
+        "--stage",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help="从指定阶段开始执行（仅Merge模式有效）：1=提取案例，2=生成模式，3=生成Skill",
+    )
 
     parser.add_argument(
         "--general-experience",
@@ -182,6 +189,7 @@ def main() -> int:
         general_experience_path=args.general_experience,
         pattern_file_path=args.pattern_file,
         existing_pattern_file_path=args.existing_pattern_file,
+        stage=args.stage,
     )
 
     return 0
