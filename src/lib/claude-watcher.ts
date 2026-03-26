@@ -72,12 +72,12 @@ export class ClaudeLogWatcher {
     this.evalTimeouts.set(filePath, evalTimeout);
   }
 
-  private async getWittyUserFromEnv(): Promise<string | undefined> {
+  private async getSkillInsightUserFromEnv(): Promise<string | undefined> {
     try {
-      const envPath = path.join(os.homedir(), '.witty', '.env');
+      const envPath = path.join(os.homedir(), '.skill-insight', '.env');
       if (fs.existsSync(envPath)) {
         const content = fs.readFileSync(envPath, 'utf-8');
-        const match = content.match(/WITTY_INSIGHT_API_KEY=(.*)/);
+        const match = content.match(/SKILL_INSIGHT_API_KEY=(.*)/);
         if (match && match[1]) {
           const apiKey = match[1].trim();
           const user = await db.findUserByApiKey(apiKey);
@@ -85,7 +85,7 @@ export class ClaudeLogWatcher {
         }
       }
     } catch (e) {
-      console.error('[ClaudeWatcher] Error reading witty env:', e);
+      console.error('[ClaudeWatcher] Error reading skill-insight env:', e);
     }
     return undefined;
   }
@@ -97,7 +97,7 @@ export class ClaudeLogWatcher {
       if (record && record.task_id) {
         if (!record.query || !record.final_result) return;
         
-        const envUser = await this.getWittyUserFromEnv();
+        const envUser = await this.getSkillInsightUserFromEnv();
         
         await saveExecutionRecord({
             user: envUser, // Pass matching user explicitly

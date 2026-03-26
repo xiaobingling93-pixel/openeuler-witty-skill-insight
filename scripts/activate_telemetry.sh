@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# Witty-Skill-Insight Official Setup Script (Fixed Path Logic)
+# Skill-Insight Official Setup Script (Fixed Path Logic)
 # 
 # Installs native telemetry hooks for Claude Code and OpenCode.
 # =============================================================================
@@ -18,7 +18,7 @@ fi
 SCRIPTS_DIR="$( cd -- "$( dirname -- "$SELF_PATH" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$( dirname "$SCRIPTS_DIR" )"
 
-echo "🚀 Starting Witty-Skill-Insight Telemetry Setup..."
+echo "🚀 Starting Skill-Insight Telemetry Setup..."
 echo "📂 Project Root: $PROJECT_ROOT"
 
 # --- 1. Load Configurations ---
@@ -39,43 +39,43 @@ if [ -f "$OPENCODE_PLUGIN_SRC" ]; then
     cp "$OPENCODE_PLUGIN_SRC" "$OPENCODE_PLUGIN_DEST"
     echo "✅ OpenCode Plugin installed to $OPENCODE_PLUGIN_DEST"
 
-    # --- 2.1 Setup Witty Config (~/.witty/.env) ---
-    WITTY_CONFIG_DIR="$HOME/.witty"
-    WITTY_CONFIG_FILE="$WITTY_CONFIG_DIR/.env"
-    mkdir -p "$WITTY_CONFIG_DIR"
+    # --- 2.1 Setup Skill-Insight Config (~/.skill-insight/.env) ---
+    SKILL_INSIGHT_CONFIG_DIR="$HOME/.skill-insight"
+    SKILL_INSIGHT_CONFIG_FILE="$SKILL_INSIGHT_CONFIG_DIR/.env"
+    mkdir -p "$SKILL_INSIGHT_CONFIG_DIR"
 
     EXISTING_KEY=""
     EXISTING_HOST=""
-    if [ -f "$WITTY_CONFIG_FILE" ]; then
+    if [ -f "$SKILL_INSIGHT_CONFIG_FILE" ]; then
         # match only UNCOMMENTED lines
-        EXISTING_KEY=$(grep '^WITTY_INSIGHT_API_KEY=' "$WITTY_CONFIG_FILE" | head -n 1 | cut -d'=' -f2-)
-        EXISTING_HOST=$(grep '^WITTY_INSIGHT_HOST=' "$WITTY_CONFIG_FILE" | head -n 1 | cut -d'=' -f2-)
+        EXISTING_KEY=$(grep '^SKILL_INSIGHT_API_KEY=' "$SKILL_INSIGHT_CONFIG_FILE" | head -n 1 | cut -d'=' -f2-)
+        EXISTING_HOST=$(grep '^SKILL_INSIGHT_HOST=' "$SKILL_INSIGHT_CONFIG_FILE" | head -n 1 | cut -d'=' -f2-)
     fi
 
     # API Key Selection Logic
     API_KEY=""
     if [ -n "$EXISTING_KEY" ]; then
-        echo "🔑 Found existing API Key in $WITTY_CONFIG_FILE."
+        echo "🔑 Found existing API Key in $SKILL_INSIGHT_CONFIG_FILE."
         read -p "👉 Use existing key? (y/N, Default: y): " USE_EXISTING < /dev/tty
         if [[ "$USE_EXISTING" =~ ^[Nn]$ ]]; then
             read -p "👉 Please enter your NEW API Key: " API_KEY < /dev/tty
         else
             API_KEY="$EXISTING_KEY"
         fi
-    elif [ -n "$WITTY_INSIGHT_API_KEY" ]; then
-        echo "🔑 Found API Key in current environment/env file: $WITTY_INSIGHT_API_KEY"
+    elif [ -n "$SKILL_INSIGHT_API_KEY" ]; then
+        echo "🔑 Found API Key in current environment/env file: $SKILL_INSIGHT_API_KEY"
         read -p "👉 Use this key for global config? (y/N, Default: y): " USE_ENV < /dev/tty
         if [[ "$USE_ENV" =~ ^[Nn]$ ]]; then
             read -p "👉 Please enter your API Key: " API_KEY < /dev/tty
         else
-            API_KEY="$WITTY_INSIGHT_API_KEY"
+            API_KEY="$SKILL_INSIGHT_API_KEY"
         fi
     else
         read -p "👉 Please enter your API Key: " API_KEY < /dev/tty
     fi
 
     # -- Host Logic --
-    NEW_HOST="${WITTY_INSIGHT_HOST:-127.0.0.1:3000}"
+    NEW_HOST="${SKILL_INSIGHT_HOST:-127.0.0.1:3000}"
     FINAL_HOST="$NEW_HOST"
     if [ -n "$EXISTING_HOST" ] && [ "$EXISTING_HOST" != "$NEW_HOST" ]; then
         echo "🌐 Current Host in global config: $EXISTING_HOST"
@@ -90,17 +90,17 @@ if [ -f "$OPENCODE_PLUGIN_SRC" ]; then
         echo "⚠️  Warning: No API Key provided. Data reporting will fail."
     fi
 
-    echo "⚙️  Syncing configuration to $WITTY_CONFIG_FILE..."
-    touch "$WITTY_CONFIG_FILE"
-    cp "$WITTY_CONFIG_FILE" "${WITTY_CONFIG_FILE}.bak"
-    grep -v "^WITTY_INSIGHT_API_KEY=" "${WITTY_CONFIG_FILE}.bak" | grep -v "^WITTY_INSIGHT_HOST=" > "$WITTY_CONFIG_FILE"
-    echo "WITTY_INSIGHT_API_KEY=$API_KEY" >> "$WITTY_CONFIG_FILE"
-    echo "WITTY_INSIGHT_HOST=$FINAL_HOST" >> "$WITTY_CONFIG_FILE"
-    rm "${WITTY_CONFIG_FILE}.bak"
+    echo "⚙️  Syncing configuration to $SKILL_INSIGHT_CONFIG_FILE..."
+    touch "$SKILL_INSIGHT_CONFIG_FILE"
+    cp "$SKILL_INSIGHT_CONFIG_FILE" "${SKILL_INSIGHT_CONFIG_FILE}.bak"
+    grep -v "^SKILL_INSIGHT_API_KEY=" "${SKILL_INSIGHT_CONFIG_FILE}.bak" | grep -v "^SKILL_INSIGHT_HOST=" > "$SKILL_INSIGHT_CONFIG_FILE"
+    echo "SKILL_INSIGHT_API_KEY=$API_KEY" >> "$SKILL_INSIGHT_CONFIG_FILE"
+    echo "SKILL_INSIGHT_HOST=$FINAL_HOST" >> "$SKILL_INSIGHT_CONFIG_FILE"
+    rm "${SKILL_INSIGHT_CONFIG_FILE}.bak"
     echo "✅ Configuration updated (Other settings preserved)."
 
     # NEW: Register Sync Hook into .zshrc / .bashrc
-    SYNC_SCRIPT="$HOME/.witty/sync_skills.js"
+    SYNC_SCRIPT="$HOME/.skill-insight/sync_skills.js"
     if [ -f "$SYNC_SCRIPT" ]; then
         SHELL_RC="$HOME/.zshrc"
         [ -f "$HOME/.bashrc" ] && SHELL_RC="$HOME/.bashrc"
@@ -108,7 +108,7 @@ if [ -f "$OPENCODE_PLUGIN_SRC" ]; then
         # Add aliases if not present
         if ! grep -q "witty_sync_wrapper" "$SHELL_RC"; then
             echo "" >> "$SHELL_RC"
-            echo "# Witty-Skill-Insight Auto-Sync" >> "$SHELL_RC"
+            echo "# Skill-Insight Auto-Sync" >> "$SHELL_RC"
             echo "alias opencode='node $SYNC_SCRIPT --agent opencode && opencode'" >> "$SHELL_RC"
             echo "alias claude='node $SYNC_SCRIPT --agent claude && claude'" >> "$SHELL_RC"
             echo "✅ Auto-sync aliases added to $SHELL_RC"
@@ -153,7 +153,7 @@ unset DEEPSEEK_BASE_URL
 unset OPENAI_BASE_URL
 
 echo ""
-echo "🌟 Witty-Skill-Insight Telemetry: READY"
+echo "🌟 Skill-Insight Telemetry: READY"
 echo "------------------------------------------------"
 echo "To test, run: opencode run 'hello'"
 echo ""

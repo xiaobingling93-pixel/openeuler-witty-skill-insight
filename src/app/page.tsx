@@ -1,7 +1,7 @@
 import Dashboard from '@/components/Dashboard';
 
 export const metadata = {
-  title: 'Witty-Skill-Insight',
+  title: 'Skill-Insight',
   description: '智能体技能评估、分析与优化',
 };
 

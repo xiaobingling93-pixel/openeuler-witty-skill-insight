@@ -250,14 +250,14 @@ class ClaudeParser {
 // HTTP Upload (replaces saveExecutionRecord)
 // ============================================================================
 
-function loadWittyConfig(): { apiKey: string; host: string } {
+function loadSkillInsightConfig(): { apiKey: string; host: string } {
     const config: { apiKey: string; host: string } = { apiKey: '', host: '' };
     try {
-        const envPath = path.join(os.homedir(), '.witty', '.env');
+        const envPath = path.join(os.homedir(), '.skill-insight', '.env');
         if (fs.existsSync(envPath)) {
             const content = fs.readFileSync(envPath, 'utf-8');
-            const apiKeyMatch = content.match(/WITTY_INSIGHT_API_KEY=(.*)/);
-            const hostMatch = content.match(/WITTY_INSIGHT_HOST=(.*)/);
+            const apiKeyMatch = content.match(/SKILL_INSIGHT_API_KEY=(.*)/);
+            const hostMatch = content.match(/SKILL_INSIGHT_HOST=(.*)/);
             if (apiKeyMatch && apiKeyMatch[1]) {
                 config.apiKey = apiKeyMatch[1].trim();
             }
@@ -266,13 +266,13 @@ function loadWittyConfig(): { apiKey: string; host: string } {
             }
         }
     } catch (e) {
-        console.error('[ClaudeWatcher] Error reading witty config:', e);
+        console.error('[ClaudeWatcher] Error reading skill-insight config:', e);
     }
     return config;
 }
 
 async function uploadExecutionRecord(record: any): Promise<void> {
-    const config = loadWittyConfig();
+    const config = loadSkillInsightConfig();
     if (!config.apiKey || !config.host) {
         console.error('[ClaudeWatcher] Missing API key or host in config');
         return;

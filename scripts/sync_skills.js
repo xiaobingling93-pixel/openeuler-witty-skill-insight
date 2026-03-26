@@ -1,11 +1,11 @@
 "use strict";
 /**
- * Witty-Skill-Insight Skill Synchronizer
+ * Skill-Insight Skill Synchronizer
  *
  * Fetches configured skills from Dashboard and installs them locally.
  * Usage: node sync_skills.js [--check-only] [--agent <name>]
  *
- * Requires: ~/.witty/.env configuration
+ * Requires: ~/.skill-insight/.env configuration
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -55,7 +55,7 @@ const AGENTS_DIR_MAP = {
 function loadConfiguration() {
     let config = {};
     try {
-        const envPath = path.join(os.homedir(), '.witty', '.env');
+        const envPath = path.join(os.homedir(), '.skill-insight', '.env');
         if (fs.existsSync(envPath)) {
             const content = fs.readFileSync(envPath, 'utf8');
             content.split('\n').forEach(line => {
@@ -68,8 +68,8 @@ function loadConfiguration() {
     }
     catch (e) { }
     return {
-        apiKey: config['WITTY_INSIGHT_API_KEY'] || process.env.WITTY_INSIGHT_API_KEY,
-        host: config['WITTY_INSIGHT_HOST'] || process.env.WITTY_INSIGHT_HOST || '127.0.0.1:3000'
+        apiKey: config['SKILL_INSIGHT_API_KEY'] || process.env.SKILL_INSIGHT_API_KEY,
+        host: config['SKILL_INSIGHT_HOST'] || process.env.SKILL_INSIGHT_HOST || '127.0.0.1:3000'
     };
 }
 async function fetchManifest(host) {

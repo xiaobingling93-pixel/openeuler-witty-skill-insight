@@ -103,7 +103,7 @@ function getRequestOptions(targetUrl, apiKey, bodyLength) {
 function loadConfiguration() {
     let config = {};
     try {
-        const envPath = path.join(os.homedir(), '.witty', '.env');
+        const envPath = path.join(os.homedir(), '.skill-insight', '.env');
         if (fs.existsSync(envPath)) {
             const content = fs.readFileSync(envPath, 'utf8');
             content.split('\n').forEach(line => {
@@ -113,8 +113,8 @@ function loadConfiguration() {
         }
     } catch (e) {}
     return {
-        apiKey: config['WITTY_INSIGHT_API_KEY'] || process.env.WITTY_INSIGHT_API_KEY,
-        host: config['WITTY_INSIGHT_HOST'] || process.env.WITTY_INSIGHT_HOST
+        apiKey: config['SKILL_INSIGHT_API_KEY'] || process.env.SKILL_INSIGHT_API_KEY,
+        host: config['SKILL_INSIGHT_HOST'] || process.env.SKILL_INSIGHT_HOST
     };
 }
 
@@ -212,7 +212,7 @@ export default async function WittySkillInsightPlugin(input) {
 
   // Auto-Sync Skills on Startup
   try {
-     const syncScript = path.join(os.homedir(), '.witty', 'sync_skills.ts');
+     const syncScript = path.join(os.homedir(), '.skill-insight', 'sync_skills.ts');
      if (fs.existsSync(syncScript)) {
          const cp = require('child_process');
          // Run async to avoid blocking

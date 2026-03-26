@@ -52,15 +52,15 @@ function generateBashScript(baseUrl: string, hostParam: string, apiKey: string):
 # Skill-insight Auto Setup (Non-Interactive)
 # =============================================================================
 
-WITTY_HOST="${hostParam}"
-WITTY_BASE_URL="${baseUrl}"
-WITTY_API_KEY="${apiKey}"
+SKILL_INSIGHT_HOST="${hostParam}"
+SKILL_INSIGHT_BASE_URL="${baseUrl}"
+SKILL_INSIGHT_API_KEY="${apiKey}"
 
-echo "🚀 Fetching Skill-insight telemetry components from $WITTY_BASE_URL..."
+echo "🚀 Fetching Skill-insight telemetry components from $SKILL_INSIGHT_BASE_URL..."
 
 # 1. Setup Directories
-mkdir -p "$HOME/.witty"
-mkdir -p "$HOME/.witty/logs"
+mkdir -p "$HOME/.skill-insight"
+mkdir -p "$HOME/.skill-insight/logs"
 mkdir -p "$HOME/.opencode/plugins"
 mkdir -p "$HOME/.opencode/skills"
 mkdir -p "$HOME/.claude/projects"
@@ -71,11 +71,11 @@ echo "📂 Created necessary directories"
 # 2. Interactive Framework Selection with inquirer
 echo ""
 
-SELECTOR_SCRIPT="$HOME/.witty/framework_selector.mjs"
-SELECTOR_RESULT="$HOME/.witty/.selector_result"
+SELECTOR_SCRIPT="$HOME/.skill-insight/framework_selector.mjs"
+SELECTOR_RESULT="$HOME/.skill-insight/.selector_result"
 
 # Install inquirer if not already installed
-cd "$HOME/.witty"
+cd "$HOME/.skill-insight"
 if [ ! -d "node_modules/inquirer" ]; then
     echo "📦 Installing inquirer for interactive selection..."
     npm install inquirer --save 2>/dev/null
@@ -130,7 +130,7 @@ async function select() {
     }
 
     // Write result to file for bash to read
-    const resultFile = process.env.SELECTOR_RESULT_FILE || process.env.HOME + '/.witty/.selector_result';
+    const resultFile = process.env.SELECTOR_RESULT_FILE || process.env.HOME + '/.skill-insight/.selector_result';
     fs.writeFileSync(resultFile, selected.join(','));
 }
 
@@ -143,7 +143,7 @@ SELECTOR_EOF
 # Run the selector interactively from /dev/tty
 # Export the result file path so the selector knows where to write
 export SELECTOR_RESULT_FILE="$SELECTOR_RESULT"
-cd "$HOME/.witty" && npx -y tsx "$SELECTOR_SCRIPT" < /dev/tty
+cd "$HOME/.skill-insight" && npx -y tsx "$SELECTOR_SCRIPT" < /dev/tty
 
 # Read the selection result from file
 if [ -f "$SELECTOR_RESULT" ]; then
@@ -178,44 +178,44 @@ fi
 # 3. Download Components
 if [ "$INSTALL_OPENCODE" = "true" ]; then
     echo "⏬ Downloading OpenCode Plugin..."
-    curl -sSf "$WITTY_BASE_URL/api/setup/opencode" -o "$HOME/.opencode/plugins/Witty-Skill-Insight.ts"
+    curl -sSf "$SKILL_INSIGHT_BASE_URL/api/setup/opencode" -o "$HOME/.opencode/plugins/Witty-Skill-Insight.ts"
 
     echo "⏬ Downloading Skill Sync Tool..."
-    curl -sSf "$WITTY_BASE_URL/sync_skills.ts" -o "$HOME/.witty/sync_skills.ts"
+    curl -sSf "$SKILL_INSIGHT_BASE_URL/sync_skills.ts" -o "$HOME/.skill-insight/sync_skills.ts"
 fi
 
 if [ "$INSTALL_CLAUDE" = "true" ]; then
     echo "⏬ Downloading Claude Code Watcher..."
-    curl -sSf "$WITTY_BASE_URL/api/setup/claude-watcher" -o "$HOME/.witty/claude_watcher_client.ts"
+    curl -sSf "$SKILL_INSIGHT_BASE_URL/api/setup/claude-watcher" -o "$HOME/.skill-insight/claude_watcher_client.ts"
 fi
 
 if [ "$INSTALL_OPENCLAW" = "true" ]; then
     echo "⏬ Downloading OpenClaw Watcher..."
-    curl -sSf "$WITTY_BASE_URL/api/setup/openclaw-watcher" -o "$HOME/.witty/openclaw_watcher_client.ts"
+    curl -sSf "$SKILL_INSIGHT_BASE_URL/api/setup/openclaw-watcher" -o "$HOME/.skill-insight/openclaw_watcher_client.ts"
 fi
 
-# 4. Configure ~/.witty/.env (Auto mode - no interaction)
-WITTY_CONFIG_FILE="$HOME/.witty/.env"
+# 4. Configure ~/.skill-insight/.env (Auto mode - no interaction)
+SKILL_INSIGHT_CONFIG_FILE="$HOME/.skill-insight/.env"
 
 echo "⚙️  Updating configuration..."
-touch "$WITTY_CONFIG_FILE"
-if [ -f "$WITTY_CONFIG_FILE" ]; then
-    cp "$WITTY_CONFIG_FILE" "\${WITTY_CONFIG_FILE}.bak"
-    grep -v "^WITTY_INSIGHT_HOST=" "\${WITTY_CONFIG_FILE}.bak" | grep -v "^WITTY_INSIGHT_API_KEY=" > "$WITTY_CONFIG_FILE"
-    rm "\${WITTY_CONFIG_FILE}.bak"
+touch "$SKILL_INSIGHT_CONFIG_FILE"
+if [ -f "$SKILL_INSIGHT_CONFIG_FILE" ]; then
+    cp "$SKILL_INSIGHT_CONFIG_FILE" "\${SKILL_INSIGHT_CONFIG_FILE}.bak"
+    grep -v "^SKILL_INSIGHT_HOST=" "\${SKILL_INSIGHT_CONFIG_FILE}.bak" | grep -v "^SKILL_INSIGHT_API_KEY=" > "$SKILL_INSIGHT_CONFIG_FILE"
+    rm "\${SKILL_INSIGHT_CONFIG_FILE}.bak"
 fi
-echo "WITTY_INSIGHT_HOST=$WITTY_HOST" >> "$WITTY_CONFIG_FILE"
-echo "WITTY_INSIGHT_API_KEY=$WITTY_API_KEY" >> "$WITTY_CONFIG_FILE"
-echo "✅ Configuration updated at $WITTY_CONFIG_FILE"
-echo "   WITTY_INSIGHT_HOST=$WITTY_HOST"
-echo "   WITTY_INSIGHT_API_KEY=********"
+echo "SKILL_INSIGHT_HOST=$SKILL_INSIGHT_HOST" >> "$SKILL_INSIGHT_CONFIG_FILE"
+echo "SKILL_INSIGHT_API_KEY=$SKILL_INSIGHT_API_KEY" >> "$SKILL_INSIGHT_CONFIG_FILE"
+echo "✅ Configuration updated at $SKILL_INSIGHT_CONFIG_FILE"
+echo "   SKILL_INSIGHT_HOST=$SKILL_INSIGHT_HOST"
+echo "   SKILL_INSIGHT_API_KEY=********"
 
 # 5. Sync Opencode Skills
 if [ "$INSTALL_OPENCODE" = "true" ]; then
     echo ""
     echo "🚀 Syncing Opencode Skills..."
     if command -v npx &> /dev/null; then
-      npx -y tsx "$HOME/.witty/sync_skills.ts" --agent opencode
+      npx -y tsx "$HOME/.skill-insight/sync_skills.ts" --agent opencode
     else
       echo "⚠️  Node.js (npx) not found. Skipping skill sync."
     fi
@@ -226,9 +226,9 @@ if [ "$INSTALL_CLAUDE" = "true" ] || [ "$INSTALL_OPENCLAW" = "true" ]; then
     echo ""
     echo "📦 Installing watcher dependencies..."
     if command -v npm &> /dev/null; then
-      cd "$HOME/.witty"
+      cd "$HOME/.skill-insight"
       if [ ! -f "package.json" ]; then
-        echo '{"name": "witty-watcher", "version": "1.0.0", "type": "module", "dependencies": {}}' > package.json
+        echo '{"name": "skill-insight-watcher", "version": "1.0.0", "type": "module", "dependencies": {}}' > package.json
       fi
       npm install chokidar --save 2>/dev/null
       echo "✅ Dependencies installed"
@@ -249,90 +249,90 @@ if [ "$NEEDS_WATCHER_SCRIPTS" = "true" ]; then
 
     # Claude Watcher Start Script
     if [ "$INSTALL_CLAUDE" = "true" ]; then
-        cat > "$HOME/.witty/start_claude_watcher.sh" << 'WATCHER_EOF'
+        cat > "$HOME/.skill-insight/start_claude_watcher.sh" << 'WATCHER_EOF'
 #!/bin/bash
 # Stop existing watcher if running
 pkill -f "claude_watcher_client.ts" 2>/dev/null
 
 # Start watcher in background
-cd "$HOME/.witty" && nohup npx -y tsx "$HOME/.witty/claude_watcher_client.ts" > "$HOME/.witty/logs/claude_watcher.log" 2>&1 &
-echo $! > "$HOME/.witty/claude_watcher.pid"
-echo "Claude watcher started with PID $(cat $HOME/.witty/claude_watcher.pid)"
+cd "$HOME/.skill-insight" && nohup npx -y tsx "$HOME/.skill-insight/claude_watcher_client.ts" > "$HOME/.skill-insight/logs/claude_watcher.log" 2>&1 &
+echo $! > "$HOME/.skill-insight/claude_watcher.pid"
+echo "Claude watcher started with PID $(cat $HOME/.skill-insight/claude_watcher.pid)"
 WATCHER_EOF
-        chmod +x "$HOME/.witty/start_claude_watcher.sh"
+        chmod +x "$HOME/.skill-insight/start_claude_watcher.sh"
         echo "✅ Claude watcher start script created"
 
         # Claude Watcher Stop Script
-        cat > "$HOME/.witty/stop_claude_watcher.sh" << 'STOP_CLAUDE_EOF'
+        cat > "$HOME/.skill-insight/stop_claude_watcher.sh" << 'STOP_CLAUDE_EOF'
 #!/bin/bash
 echo "Stopping Claude watcher..."
 pkill -f "claude_watcher_client.ts" 2>/dev/null
-rm -f "$HOME/.witty/claude_watcher.pid"
+rm -f "$HOME/.skill-insight/claude_watcher.pid"
 echo "Claude watcher stopped"
 STOP_CLAUDE_EOF
-        chmod +x "$HOME/.witty/stop_claude_watcher.sh"
+        chmod +x "$HOME/.skill-insight/stop_claude_watcher.sh"
         echo "✅ Claude watcher stop script created"
     fi
 
     # OpenClaw Watcher Start Script
     if [ "$INSTALL_OPENCLAW" = "true" ]; then
-        cat > "$HOME/.witty/start_openclaw_watcher.sh" << 'WATCHER_EOF'
+        cat > "$HOME/.skill-insight/start_openclaw_watcher.sh" << 'WATCHER_EOF'
 #!/bin/bash
 # Stop existing watcher if running
 pkill -f "openclaw_watcher_client.ts" 2>/dev/null
 
 # Start watcher in background
-cd "$HOME/.witty" && nohup npx -y tsx "$HOME/.witty/openclaw_watcher_client.ts" > "$HOME/.witty/logs/openclaw_watcher.log" 2>&1 &
-echo $! > "$HOME/.witty/openclaw_watcher.pid"
-echo "OpenClaw watcher started with PID $(cat $HOME/.witty/openclaw_watcher.pid)"
+cd "$HOME/.skill-insight" && nohup npx -y tsx "$HOME/.skill-insight/openclaw_watcher_client.ts" > "$HOME/.skill-insight/logs/openclaw_watcher.log" 2>&1 &
+echo $! > "$HOME/.skill-insight/openclaw_watcher.pid"
+echo "OpenClaw watcher started with PID $(cat $HOME/.skill-insight/openclaw_watcher.pid)"
 WATCHER_EOF
-        chmod +x "$HOME/.witty/start_openclaw_watcher.sh"
+        chmod +x "$HOME/.skill-insight/start_openclaw_watcher.sh"
         echo "✅ OpenClaw watcher start script created"
 
         # OpenClaw Watcher Stop Script
-        cat > "$HOME/.witty/stop_openclaw_watcher.sh" << 'STOP_OPENCLAW_EOF'
+        cat > "$HOME/.skill-insight/stop_openclaw_watcher.sh" << 'STOP_OPENCLAW_EOF'
 #!/bin/bash
 echo "Stopping OpenClaw watcher..."
 pkill -f "openclaw_watcher_client.ts" 2>/dev/null
-rm -f "$HOME/.witty/openclaw_watcher.pid"
+rm -f "$HOME/.skill-insight/openclaw_watcher.pid"
 echo "OpenClaw watcher stopped"
 STOP_OPENCLAW_EOF
-        chmod +x "$HOME/.witty/stop_openclaw_watcher.sh"
+        chmod +x "$HOME/.skill-insight/stop_openclaw_watcher.sh"
         echo "✅ OpenClaw watcher stop script created"
     fi
 
     # Combined Start Script - Dynamic generation
-    cat > "$HOME/.witty/start_watchers.sh" << 'WATCHER_HEADER'
+    cat > "$HOME/.skill-insight/start_watchers.sh" << 'WATCHER_HEADER'
 #!/bin/bash
-echo "Starting Witty-Skill-Insight watchers..."
+echo "Starting Skill-Insight watchers..."
 WATCHER_HEADER
 
     if [ "$INSTALL_CLAUDE" = "true" ]; then
-        echo '"$HOME/.witty/start_claude_watcher.sh"' >> "$HOME/.witty/start_watchers.sh"
+        echo '"$HOME/.skill-insight/start_claude_watcher.sh"' >> "$HOME/.skill-insight/start_watchers.sh"
     fi
     if [ "$INSTALL_OPENCLAW" = "true" ]; then
-        echo '"$HOME/.witty/start_openclaw_watcher.sh"' >> "$HOME/.witty/start_watchers.sh"
+        echo '"$HOME/.skill-insight/start_openclaw_watcher.sh"' >> "$HOME/.skill-insight/start_watchers.sh"
     fi
 
-    echo 'echo "All watchers started!"' >> "$HOME/.witty/start_watchers.sh"
-    chmod +x "$HOME/.witty/start_watchers.sh"
+    echo 'echo "All watchers started!"' >> "$HOME/.skill-insight/start_watchers.sh"
+    chmod +x "$HOME/.skill-insight/start_watchers.sh"
     echo "✅ Combined start script created"
 
     # Combined Stop Script - Dynamic generation
-    cat > "$HOME/.witty/stop_watchers.sh" << 'STOP_HEADER'
+    cat > "$HOME/.skill-insight/stop_watchers.sh" << 'STOP_HEADER'
 #!/bin/bash
-echo "Stopping Witty-Skill-Insight watchers..."
+echo "Stopping Skill-Insight watchers..."
 STOP_HEADER
 
     if [ "$INSTALL_CLAUDE" = "true" ]; then
-        echo '"$HOME/.witty/stop_claude_watcher.sh"' >> "$HOME/.witty/stop_watchers.sh"
+        echo '"$HOME/.skill-insight/stop_claude_watcher.sh"' >> "$HOME/.skill-insight/stop_watchers.sh"
     fi
     if [ "$INSTALL_OPENCLAW" = "true" ]; then
-        echo '"$HOME/.witty/stop_openclaw_watcher.sh"' >> "$HOME/.witty/stop_watchers.sh"
+        echo '"$HOME/.skill-insight/stop_openclaw_watcher.sh"' >> "$HOME/.skill-insight/stop_watchers.sh"
     fi
 
-    echo 'echo "All watchers stopped!"' >> "$HOME/.witty/stop_watchers.sh"
-    chmod +x "$HOME/.witty/stop_watchers.sh"
+    echo 'echo "All watchers stopped!"' >> "$HOME/.skill-insight/stop_watchers.sh"
+    chmod +x "$HOME/.skill-insight/stop_watchers.sh"
     echo "✅ Combined stop script created"
 fi
 
@@ -341,7 +341,7 @@ if [ "$NEEDS_WATCHER_SCRIPTS" = "true" ]; then
     echo ""
     echo "🚀 Starting telemetry watchers..."
     if command -v npx &> /dev/null; then
-        "$HOME/.witty/start_watchers.sh"
+        "$HOME/.skill-insight/start_watchers.sh"
     else
         echo "⚠️  Node.js (npx) not found. Skipping watcher startup."
     fi
@@ -352,19 +352,19 @@ if [ "$INSTALL_CLAUDE" = "true" ]; then
     echo ""
     echo "🔄 Configuring Claude Code Auto-Sync Wrapper..."
     CLAUDE_WRAPPER='
-# Witty Insight Claude Alliance
-witty-claude() {
+# Skill Insight Claude Alliance
+skill-insight-claude() {
     if command -v npx &> /dev/null; then
-        npx -y tsx "$HOME/.witty/sync_skills.ts" --agent claude >/dev/null 2>&1
+        npx -y tsx "$HOME/.skill-insight/sync_skills.ts" --agent claude >/dev/null 2>&1
     fi
     command claude "$@"
 }
-alias claude="witty-claude"
+alias claude="skill-insight-claude"
 '
 
     for rc_file in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc_file" ]; then
-            if ! grep -q "witty-claude()" "$rc_file" 2>/dev/null; then
+            if ! grep -q "skill-insight-claude()" "$rc_file" 2>/dev/null; then
                 echo "$CLAUDE_WRAPPER" >> "$rc_file"
                 echo "✅ Installed Claude wrapper to $rc_file"
             fi
@@ -374,33 +374,33 @@ fi
 
 # 10. Final Summary
 echo ""
-echo "🌟 Witty-Skill-Insight Telemetry: READY"
+echo "🌟 Skill-Insight Telemetry: READY"
 echo "------------------------------------------------"
 echo "Installed Components:"
 if [ "$INSTALL_OPENCODE" = "true" ]; then
     echo "  ✅ OpenCode Plugin: ~/.opencode/plugins/Witty-Skill-Insight.ts"
 fi
 if [ "$INSTALL_CLAUDE" = "true" ]; then
-    echo "  ✅ Claude Watcher: ~/.witty/claude_watcher_client.ts"
+    echo "  ✅ Claude Watcher: ~/.skill-insight/claude_watcher_client.ts"
 fi
 if [ "$INSTALL_OPENCLAW" = "true" ]; then
-    echo "  ✅ OpenClaw Watcher: ~/.witty/openclaw_watcher_client.ts"
+    echo "  ✅ OpenClaw Watcher: ~/.skill-insight/openclaw_watcher_client.ts"
 fi
 
 if [ "$NEEDS_WATCHER_SCRIPTS" = "true" ]; then
     echo ""
     echo "Watcher Management:"
-    echo "  Start all:    ~/.witty/start_watchers.sh"
-    echo "  Stop all:     ~/.witty/stop_watchers.sh"
+    echo "  Start all:    ~/.skill-insight/start_watchers.sh"
+    echo "  Stop all:     ~/.skill-insight/stop_watchers.sh"
     if [ "$INSTALL_CLAUDE" = "true" ]; then
-        echo "  Start Claude: ~/.witty/start_claude_watcher.sh"
-        echo "  Stop Claude:  ~/.witty/stop_claude_watcher.sh"
+        echo "  Start Claude: ~/.skill-insight/start_claude_watcher.sh"
+        echo "  Stop Claude:  ~/.skill-insight/stop_claude_watcher.sh"
     fi
     if [ "$INSTALL_OPENCLAW" = "true" ]; then
-        echo "  Start OpenClaw: ~/.witty/start_openclaw_watcher.sh"
-        echo "  Stop OpenClaw:  ~/.witty/stop_openclaw_watcher.sh"
+        echo "  Start OpenClaw: ~/.skill-insight/start_openclaw_watcher.sh"
+        echo "  Stop OpenClaw:  ~/.skill-insight/stop_openclaw_watcher.sh"
     fi
-    echo "  Logs:         ~/.witty/logs/"
+    echo "  Logs:         ~/.skill-insight/logs/"
 fi
 
 echo ""
@@ -430,22 +430,22 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '# Skill-insight Auto Setup (Non-Interactive) - PowerShell',
         '# =============================================================================',
         '',
-        '$WITTY_HOST = "' + hostParam + '"',
-        '$WITTY_BASE_URL = "' + baseUrl + '"',
-        '$WITTY_API_KEY = "' + apiKey + '"',
+        '$SKILL_INSIGHT_HOST = "' + hostParam + '"',
+        '$SKILL_INSIGHT_BASE_URL = "' + baseUrl + '"',
+        '$SKILL_INSIGHT_API_KEY = "' + apiKey + '"',
         '',
-        'Write-Host "🚀 Fetching Skill-insight telemetry components from $WITTY_BASE_URL..."',
+        'Write-Host "🚀 Fetching Skill-insight telemetry components from $SKILL_INSIGHT_BASE_URL..."',
         '',
         '# 1. Setup Directories',
-        '$wittyDir = Join-Path $env:USERPROFILE ".witty"',
-        '$wittyLogsDir = Join-Path $wittyDir "logs"',
+        '$skillInsightDir = Join-Path $env:USERPROFILE ".skill-insight"',
+        '$skillInsightLogsDir = Join-Path $skillInsightDir "logs"',
         '$opencodePluginsDir = Join-Path $env:USERPROFILE ".opencode\\plugins"',
         '$opencodeSkillsDir = Join-Path $env:USERPROFILE ".opencode\\skills"',
         '$claudeProjectsDir = Join-Path $env:USERPROFILE ".claude\\projects"',
         '$openclawAgentsDir = Join-Path $env:USERPROFILE ".openclaw\\agents"',
         '',
-        'New-Item -ItemType Directory -Force -Path $wittyDir | Out-Null',
-        'New-Item -ItemType Directory -Force -Path $wittyLogsDir | Out-Null',
+        'New-Item -ItemType Directory -Force -Path $skillInsightDir | Out-Null',
+        'New-Item -ItemType Directory -Force -Path $skillInsightLogsDir | Out-Null',
         'New-Item -ItemType Directory -Force -Path $opencodePluginsDir | Out-Null',
         'New-Item -ItemType Directory -Force -Path $opencodeSkillsDir | Out-Null',
         'New-Item -ItemType Directory -Force -Path $claudeProjectsDir | Out-Null',
@@ -456,11 +456,11 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '# 2. Interactive Framework Selection with inquirer',
         'Write-Host ""',
         '',
-        '$SELECTOR_SCRIPT = Join-Path $wittyDir "framework_selector.mjs"',
-        '$SELECTOR_RESULT = Join-Path $wittyDir ".selector_result"',
+        '$SELECTOR_SCRIPT = Join-Path $skillInsightDir "framework_selector.mjs"',
+        '$SELECTOR_RESULT = Join-Path $skillInsightDir ".selector_result"',
         '',
         '# Install inquirer if not already installed',
-        'Set-Location $wittyDir',
+        'Set-Location $skillInsightDir',
         'if (-not (Test-Path "node_modules\\inquirer")) {',
         '    Write-Host "📦 Installing inquirer for interactive selection..."',
         '    npm install inquirer --save 2>$null',
@@ -515,7 +515,7 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '    "    }"',
         '    ""',
         '    "    // Write result to file for PowerShell to read"',
-        '    "    const resultFile = process.env.SELECTOR_RESULT_FILE || process.env.USERPROFILE + \'\\\\.witty\\\\.selector_result\';"',
+        '    "    const resultFile = process.env.SELECTOR_RESULT_FILE || process.env.USERPROFILE + \'\\\\.skill-insight\\\\.selector_result\';"',
         '    "    fs.writeFileSync(resultFile, selected.join(\',\'));"',
         '    "}"',
         '    ""',
@@ -529,7 +529,7 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '',
         '# Run the selector interactively',
         '$env:SELECTOR_RESULT_FILE = $SELECTOR_RESULT',
-        'Set-Location $wittyDir',
+        'Set-Location $skillInsightDir',
         'npx -y tsx $SELECTOR_SCRIPT',
         '',
         '# Read the selection result from file',
@@ -565,45 +565,45 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '# 3. Download Components',
         'if ($INSTALL_OPENCODE) {',
         '    Write-Host "⏬ Downloading OpenCode Plugin..."',
-        '    Invoke-WebRequest -Uri "$WITTY_BASE_URL/api/setup/opencode" -OutFile (Join-Path $opencodePluginsDir "Witty-Skill-Insight.ts")',
+        '    Invoke-WebRequest -Uri "$SKILL_INSIGHT_BASE_URL/api/setup/opencode" -OutFile (Join-Path $opencodePluginsDir "Witty-Skill-Insight.ts")',
         '    ',
         '    Write-Host "⏬ Downloading Skill Sync Tool..."',
-        '    Invoke-WebRequest -Uri "$WITTY_BASE_URL/sync_skills.ts" -OutFile (Join-Path $wittyDir "sync_skills.ts")',
+        '    Invoke-WebRequest -Uri "$SKILL_INSIGHT_BASE_URL/sync_skills.ts" -OutFile (Join-Path $skillInsightDir "sync_skills.ts")',
         '}',
         '',
         'if ($INSTALL_CLAUDE) {',
         '    Write-Host "⏬ Downloading Claude Code Watcher..."',
-        '    Invoke-WebRequest -Uri "$WITTY_BASE_URL/api/setup/claude-watcher" -OutFile (Join-Path $wittyDir "claude_watcher_client.ts")',
+        '    Invoke-WebRequest -Uri "$SKILL_INSIGHT_BASE_URL/api/setup/claude-watcher" -OutFile (Join-Path $skillInsightDir "claude_watcher_client.ts")',
         '}',
         '',
         'if ($INSTALL_OPENCLAW) {',
         '    Write-Host "⏬ Downloading OpenClaw Watcher..."',
-        '    Invoke-WebRequest -Uri "$WITTY_BASE_URL/api/setup/openclaw-watcher" -OutFile (Join-Path $wittyDir "openclaw_watcher_client.ts")',
+        '    Invoke-WebRequest -Uri "$SKILL_INSIGHT_BASE_URL/api/setup/openclaw-watcher" -OutFile (Join-Path $skillInsightDir "openclaw_watcher_client.ts")',
         '}',
         '',
-        '# 4. Configure ~/.witty/.env (Auto mode - no interaction)',
-        '$WITTY_CONFIG_FILE = Join-Path $wittyDir ".env"',
+        '# 4. Configure ~/.skill-insight/.env (Auto mode - no interaction)',
+        '$SKILL_INSIGHT_CONFIG_FILE = Join-Path $skillInsightDir ".env"',
         '',
         'Write-Host "⚙️  Updating configuration..."',
-        'if (Test-Path $WITTY_CONFIG_FILE) {',
-        '    $existingContent = Get-Content $WITTY_CONFIG_FILE',
-        '    $filteredContent = $existingContent | Where-Object { $_ -notmatch "^WITTY_INSIGHT_HOST=" -and $_ -notmatch "^WITTY_INSIGHT_API_KEY=" }',
-        '    Set-Content -Path $WITTY_CONFIG_FILE -Value $filteredContent',
+        'if (Test-Path $SKILL_INSIGHT_CONFIG_FILE) {',
+        '    $existingContent = Get-Content $SKILL_INSIGHT_CONFIG_FILE',
+        '    $filteredContent = $existingContent | Where-Object { $_ -notmatch "^SKILL_INSIGHT_HOST=" -and $_ -notmatch "^SKILL_INSIGHT_API_KEY=" }',
+        '    Set-Content -Path $SKILL_INSIGHT_CONFIG_FILE -Value $filteredContent',
         '} else {',
-        '    New-Item -ItemType File -Path $WITTY_CONFIG_FILE -Force | Out-Null',
+        '    New-Item -ItemType File -Path $SKILL_INSIGHT_CONFIG_FILE -Force | Out-Null',
         '}',
-        'Add-Content -Path $WITTY_CONFIG_FILE -Value "WITTY_INSIGHT_HOST=$WITTY_HOST"',
-        'Add-Content -Path $WITTY_CONFIG_FILE -Value "WITTY_INSIGHT_API_KEY=$WITTY_API_KEY"',
-        'Write-Host "✅ Configuration updated at $WITTY_CONFIG_FILE"',
-        'Write-Host "   WITTY_INSIGHT_HOST=$WITTY_HOST"',
-        'Write-Host "   WITTY_INSIGHT_API_KEY=********"',
+        'Add-Content -Path $SKILL_INSIGHT_CONFIG_FILE -Value "SKILL_INSIGHT_HOST=$SKILL_INSIGHT_HOST"',
+        'Add-Content -Path $SKILL_INSIGHT_CONFIG_FILE -Value "SKILL_INSIGHT_API_KEY=$SKILL_INSIGHT_API_KEY"',
+        'Write-Host "✅ Configuration updated at $SKILL_INSIGHT_CONFIG_FILE"',
+        'Write-Host "   SKILL_INSIGHT_HOST=$SKILL_INSIGHT_HOST"',
+        'Write-Host "   SKILL_INSIGHT_API_KEY=********"',
         '',
         '# 5. Sync Opencode Skills',
         'if ($INSTALL_OPENCODE) {',
         '    Write-Host ""',
         '    Write-Host "🚀 Syncing Opencode Skills..."',
         '    if (Get-Command npx -ErrorAction SilentlyContinue) {',
-        '        npx -y tsx (Join-Path $wittyDir "sync_skills.ts") --agent opencode',
+        '        npx -y tsx (Join-Path $skillInsightDir "sync_skills.ts") --agent opencode',
         '    } else {',
         '        Write-Host "⚠️  Node.js (npx) not found. Skipping skill sync."',
         '    }',
@@ -614,9 +614,9 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '    Write-Host ""',
         '    Write-Host "📦 Installing watcher dependencies..."',
         '    if (Get-Command npm -ErrorAction SilentlyContinue) {',
-        '        Set-Location $wittyDir',
+        '        Set-Location $skillInsightDir',
         '        if (-not (Test-Path "package.json")) {',
-        '            \'{"name": "witty-watcher", "version": "1.0.0", "type": "module", "dependencies": {}}\' | Out-File -FilePath "package.json" -Encoding utf8',
+        '            \'{"name": "skill-insight-watcher", "version": "1.0.0", "type": "module", "dependencies": {}}\' | Out-File -FilePath "package.json" -Encoding utf8',
         '        }',
         '        npm install chokidar --save 2>$null',
         '        Write-Host "✅ Dependencies installed"',
@@ -639,14 +639,14 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         'Get-Process | Where-Object { $_.CommandLine -like "*claude_watcher_client.ts*" } | Stop-Process -Force -ErrorAction SilentlyContinue',
         '',
         '# Start watcher in background',
-        '$wittyDir = Join-Path $env:USERPROFILE ".witty"',
-        '$logFile = Join-Path $wittyDir "logs\\claude_watcher.log"',
-        '$scriptPath = Join-Path $wittyDir "claude_watcher_client.ts"',
+        '$skillInsightDir = Join-Path $env:USERPROFILE ".skill-insight"',
+        '$logFile = Join-Path $skillInsightDir "logs\\claude_watcher.log"',
+        '$scriptPath = Join-Path $skillInsightDir "claude_watcher_client.ts"',
         '',
         'Start-Process -FilePath "npx" -ArgumentList "-y", "tsx", $scriptPath -NoNewWindow -RedirectStandardOutput $logFile -RedirectStandardError $logFile',
         'Write-Host "Claude watcher started"',
         '\'@',
-        '        $startClaudePath = Join-Path $wittyDir "start_claude_watcher.ps1"',
+        '        $startClaudePath = Join-Path $skillInsightDir "start_claude_watcher.ps1"',
         '        Set-Content -Path $startClaudePath -Value $startClaudeScript -Encoding UTF8',
         '        Write-Host "✅ Claude watcher start script created"',
         '',
@@ -656,7 +656,7 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         'Get-Process | Where-Object { $_.CommandLine -like "*claude_watcher_client.ts*" } | Stop-Process -Force -ErrorAction SilentlyContinue',
         'Write-Host "Claude watcher stopped"',
         '\'@',
-        '        $stopClaudePath = Join-Path $wittyDir "stop_claude_watcher.ps1"',
+        '        $stopClaudePath = Join-Path $skillInsightDir "stop_claude_watcher.ps1"',
         '        Set-Content -Path $stopClaudePath -Value $stopClaudeScript -Encoding UTF8',
         '        Write-Host "✅ Claude watcher stop script created"',
         '    }',
@@ -668,14 +668,14 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         'Get-Process | Where-Object { $_.CommandLine -like "*openclaw_watcher_client.ts*" } | Stop-Process -Force -ErrorAction SilentlyContinue',
         '',
         '# Start watcher in background',
-        '$wittyDir = Join-Path $env:USERPROFILE ".witty"',
-        '$logFile = Join-Path $wittyDir "logs\\openclaw_watcher.log"',
-        '$scriptPath = Join-Path $wittyDir "openclaw_watcher_client.ts"',
+        '$skillInsightDir = Join-Path $env:USERPROFILE ".skill-insight"',
+        '$logFile = Join-Path $skillInsightDir "logs\\openclaw_watcher.log"',
+        '$scriptPath = Join-Path $skillInsightDir "openclaw_watcher_client.ts"',
         '',
         'Start-Process -FilePath "npx" -ArgumentList "-y", "tsx", $scriptPath -NoNewWindow -RedirectStandardOutput $logFile -RedirectStandardError $logFile',
         'Write-Host "OpenClaw watcher started"',
         '\'@',
-        '        $startOpenclawPath = Join-Path $wittyDir "start_openclaw_watcher.ps1"',
+        '        $startOpenclawPath = Join-Path $skillInsightDir "start_openclaw_watcher.ps1"',
         '        Set-Content -Path $startOpenclawPath -Value $startOpenclawScript -Encoding UTF8',
         '        Write-Host "✅ OpenClaw watcher start script created"',
         '',
@@ -685,35 +685,35 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         'Get-Process | Where-Object { $_.CommandLine -like "*openclaw_watcher_client.ts*" } | Stop-Process -Force -ErrorAction SilentlyContinue',
         'Write-Host "OpenClaw watcher stopped"',
         '\'@',
-        '        $stopOpenclawPath = Join-Path $wittyDir "stop_openclaw_watcher.ps1"',
+        '        $stopOpenclawPath = Join-Path $skillInsightDir "stop_openclaw_watcher.ps1"',
         '        Set-Content -Path $stopOpenclawPath -Value $stopOpenclawScript -Encoding UTF8',
         '        Write-Host "✅ OpenClaw watcher stop script created"',
         '    }',
         '',
         '    # Combined Start Script',
         '    $startLines = @()',
-        '    $startLines += \'Write-Host "Starting Witty-Skill-Insight watchers..."\'',
+        '    $startLines += \'Write-Host "Starting Skill-Insight watchers..."\'',
         '    if ($INSTALL_CLAUDE) {',
-        '        $startLines += \'powershell -File "\' + $wittyDir + \'\\start_claude_watcher.ps1"\'',
+        '        $startLines += \'powershell -File "\' + $skillInsightDir + \'\\start_claude_watcher.ps1"\'',
         '    }',
         '    if ($INSTALL_OPENCLAW) {',
-        '        $startLines += \'powershell -File "\' + $wittyDir + \'\\start_openclaw_watcher.ps1"\'',
+        '        $startLines += \'powershell -File "\' + $skillInsightDir + \'\\start_openclaw_watcher.ps1"\'',
         '    }',
         '    $startLines += \'Write-Host "All watchers started!"\'',
-        '    $startLines -join [char]10 | Set-Content -Path (Join-Path $wittyDir "start_watchers.ps1") -Encoding UTF8',
+        '    $startLines -join [char]10 | Set-Content -Path (Join-Path $skillInsightDir "start_watchers.ps1") -Encoding UTF8',
         '    Write-Host "✅ Combined start script created"',
         '',
         '    # Combined Stop Script',
         '    $stopLines = @()',
-        '    $stopLines += \'Write-Host "Stopping Witty-Skill-Insight watchers..."\'',
+        '    $stopLines += \'Write-Host "Stopping Skill-Insight watchers..."\'',
         '    if ($INSTALL_CLAUDE) {',
-        '        $stopLines += \'powershell -File "\' + $wittyDir + \'\\stop_claude_watcher.ps1"\'',
+        '        $stopLines += \'powershell -File "\' + $skillInsightDir + \'\\stop_claude_watcher.ps1"\'',
         '    }',
         '    if ($INSTALL_OPENCLAW) {',
-        '        $stopLines += \'powershell -File "\' + $wittyDir + \'\\stop_openclaw_watcher.ps1"\'',
+        '        $stopLines += \'powershell -File "\' + $skillInsightDir + \'\\stop_openclaw_watcher.ps1"\'',
         '    }',
         '    $stopLines += \'Write-Host "All watchers stopped!"\'',
-        '    $stopLines -join [char]10 | Set-Content -Path (Join-Path $wittyDir "stop_watchers.ps1") -Encoding UTF8',
+        '    $stopLines -join [char]10 | Set-Content -Path (Join-Path $skillInsightDir "stop_watchers.ps1") -Encoding UTF8',
         '    Write-Host "✅ Combined stop script created"',
         '}',
         '',
@@ -722,7 +722,7 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '    Write-Host ""',
         '    Write-Host "🚀 Starting telemetry watchers..."',
         '    if (Get-Command npx -ErrorAction SilentlyContinue) {',
-        '        & (Join-Path $wittyDir "start_watchers.ps1")',
+        '        & (Join-Path $skillInsightDir "start_watchers.ps1")',
         '    } else {',
         '        Write-Host "⚠️  Node.js (npx) not found. Skipping watcher startup."',
         '    }',
@@ -735,20 +735,20 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '    ',
         '    $claudeWrapper = @\'',
         '',
-        '# Witty Insight Claude Alliance',
-        'function witty-claude {',
+        '# Skill Insight Claude Alliance',
+        'function skill-insight-claude {',
         '    if (Get-Command npx -ErrorAction SilentlyContinue) {',
-        '        npx -y tsx "$env:USERPROFILE\\.witty\\sync_skills.ts" --agent claude 2>$null',
+        '        npx -y tsx "$env:USERPROFILE\\.skill-insight\\sync_skills.ts" --agent claude 2>$null',
         '    }',
         '    claude $args',
         '}',
-        'Set-Alias -Name claude -Value witty-claude -Force',
+        'Set-Alias -Name claude -Value skill-insight-claude -Force',
         '\'@',
         '',
         '    $profilePath = $PROFILE',
         '    if (Test-Path $profilePath) {',
         '        $profileContent = Get-Content $profilePath -Raw',
-        '        if ($profileContent -notmatch "witty-claude") {',
+        '        if ($profileContent -notmatch "skill-insight-claude") {',
         '            Add-Content -Path $profilePath -Value $claudeWrapper',
         '            Write-Host "✅ Installed Claude wrapper to $profilePath"',
         '        }',
@@ -764,33 +764,33 @@ function generatePowerShellScript(baseUrl: string, hostParam: string, apiKey: st
         '',
         '# 10. Final Summary',
         'Write-Host ""',
-        'Write-Host "🌟 Witty-Skill-Insight Telemetry: READY"',
+        'Write-Host "🌟 Skill-Insight Telemetry: READY"',
         'Write-Host "------------------------------------------------"',
         'Write-Host "Installed Components:"',
         'if ($INSTALL_OPENCODE) {',
         '    Write-Host "  ✅ OpenCode Plugin: ~/.opencode/plugins/Witty-Skill-Insight.ts"',
         '}',
         'if ($INSTALL_CLAUDE) {',
-        '    Write-Host "  ✅ Claude Watcher: ~/.witty/claude_watcher_client.ts"',
+        '    Write-Host "  ✅ Claude Watcher: ~/.skill-insight/claude_watcher_client.ts"',
         '}',
         'if ($INSTALL_OPENCLAW) {',
-        '    Write-Host "  ✅ OpenClaw Watcher: ~/.witty/openclaw_watcher_client.ts"',
+        '    Write-Host "  ✅ OpenClaw Watcher: ~/.skill-insight/openclaw_watcher_client.ts"',
         '}',
         '',
         'if ($NEEDS_WATCHER_SCRIPTS) {',
         '    Write-Host ""',
         '    Write-Host "Watcher Management:"',
-        '    Write-Host "  Start all:    ~/.witty/start_watchers.ps1"',
-        '    Write-Host "  Stop all:     ~/.witty/stop_watchers.ps1"',
+        '    Write-Host "  Start all:    ~/.skill-insight/start_watchers.ps1"',
+        '    Write-Host "  Stop all:     ~/.skill-insight/stop_watchers.ps1"',
         '    if ($INSTALL_CLAUDE) {',
-        '        Write-Host "  Start Claude: ~/.witty/start_claude_watcher.ps1"',
-        '        Write-Host "  Stop Claude:  ~/.witty/stop_claude_watcher.ps1"',
+        '        Write-Host "  Start Claude: ~/.skill-insight/start_claude_watcher.ps1"',
+        '        Write-Host "  Stop Claude:  ~/.skill-insight/stop_claude_watcher.ps1"',
         '    }',
         '    if ($INSTALL_OPENCLAW) {',
-        '        Write-Host "  Start OpenClaw: ~/.witty/start_openclaw_watcher.ps1"',
-        '        Write-Host "  Stop OpenClaw:  ~/.witty/stop_openclaw_watcher.ps1"',
+        '        Write-Host "  Start OpenClaw: ~/.skill-insight/start_openclaw_watcher.ps1"',
+        '        Write-Host "  Stop OpenClaw:  ~/.skill-insight/stop_openclaw_watcher.ps1"',
         '    }',
-        '    Write-Host "  Logs:         ~/.witty/logs/"',
+        '    Write-Host "  Logs:         ~/.skill-insight/logs/"',
         '}',
         '',
         'Write-Host ""',

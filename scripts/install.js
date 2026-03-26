@@ -150,7 +150,7 @@ async function run(options = {}) {
   
   console.log('🔧 【步骤 2/5】启动服务...')
   try {
-    const logPath = path.join(os.homedir(), '.witty', 'install.log')
+    const logPath = path.join(os.homedir(), '.skill-insight', 'install.log')
     const logDir = path.dirname(logPath)
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true })
@@ -193,7 +193,7 @@ async function run(options = {}) {
     
     const scriptContent = await callAutoSetup(port, apiKey)
     const isWindows = process.platform === 'win32'
-    const scriptDir = path.join(os.homedir(), '.witty')
+    const scriptDir = path.join(os.homedir(), '.skill-insight')
     
     fs.mkdirSync(scriptDir, { recursive: true })
     

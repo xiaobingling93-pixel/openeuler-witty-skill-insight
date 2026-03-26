@@ -1197,7 +1197,7 @@ export default function Dashboard() {
             <header className="header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <h1 className="title" style={{ marginBottom: 0 }}>Witty-Skill-Insight</h1>
+                        <h1 className="title" style={{ marginBottom: 0 }}>Skill-Insight</h1>
                         <span style={{ fontSize: '0.8rem', color: '#94a3b8', letterSpacing: '1px' }}>智能体技能评估、分析与优化</span>
                     </div>
 
@@ -3131,7 +3131,7 @@ export default function Dashboard() {
                                     <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#bae6fd', lineHeight: 1.5 }}>
                                             <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br />
-                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export WITTY_INSIGHT_API_KEY={localApiKey}</code>
+                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export SKILL_INSIGHT_API_KEY={localApiKey}</code>
                                         </p>
                                     </div>
                                 </div>
