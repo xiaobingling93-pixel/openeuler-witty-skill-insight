@@ -69,7 +69,7 @@ export async function judgeAnswer(
   const { client, model } = await getLlmClient(user);
   if (!client || !client.apiKey) {
     console.warn("LLM Evaluation disabled or missing config. Skipping.");
-    return { is_correct: false, score: 0, reason: "LLM评估已禁用（未配置模型或已关闭）" };
+    return { is_correct: false, score: 0, reason: "请在首页左上角的设置中配置 LLM" };
   }
 
   try {
@@ -132,7 +132,7 @@ export async function judgeAnswer(
         totalWeightedScore += match * rc.weight;
         totalWeight += rc.weight;
         
-        reasonLines.push(`1. **Root Cause** [${rc.content.substring(0, 20)}...]: ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${rc.weight})`);
+        reasonLines.push(`1. **Root Cause** [${rc.content.replace(/\n/g, ' ')}]: ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${rc.weight})`);
     });
 
     // Process Key Actions
@@ -144,7 +144,7 @@ export async function judgeAnswer(
         totalWeightedScore += match * ka.weight;
         totalWeight += ka.weight;
         
-        reasonLines.push(`2. **Key Action** [${ka.content.substring(0, 20)}...]: ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${ka.weight})`);
+        reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}]: ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${ka.weight})`);
     });
 
     let finalScore = 0;
@@ -254,7 +254,7 @@ function parseEvaluationItemsFromReason(judgmentReason: string): Array<{
     for (const line of lines) {
         // 匹配 Root Cause 行
         // 格式: "1. **Root Cause** [内容...]: 50% match. 解释... (Weight: 0.5)"
-        const rcMatch = line.match(/\*\*Root Cause\*\*\s*\[([^\]]+)\].*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
+        const rcMatch = line.match(/\*\*Root Cause\*\*\s*\[(.*?)\]\s*.*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
         if (rcMatch) {
             items.push({
                 id: `RC-${itemIndex.rc++}`,
@@ -268,7 +268,7 @@ function parseEvaluationItemsFromReason(judgmentReason: string): Array<{
         }
         
         // 匹配 Key Action 行
-        const kaMatch = line.match(/\*\*Key Action\*\*\s*\[([^\]]+)\].*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
+        const kaMatch = line.match(/\*\*Key Action\*\*\s*\[(.*?)\]\s*.*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
         if (kaMatch) {
             items.push({
                 id: `KA-${itemIndex.ka++}`,

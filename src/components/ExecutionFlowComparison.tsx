@@ -53,7 +53,7 @@ export default function ExecutionFlowComparison({
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [error, setError] = useState<string>('');
   const [analysisExpanded, setAnalysisExpanded] = useState(true);
-  const [componentExpanded, setComponentExpanded] = useState(true);
+  const [componentExpanded, setComponentExpanded] = useState(false);
 
   const actualSkillId = skillId && skillId.trim() ? skillId : null;
 
@@ -103,7 +103,7 @@ export default function ExecutionFlowComparison({
 
   const handleCompareAnalyze = async () => {
     if (!actualSkillId) {
-      setError('该执行记录未关联 Skill，无法进行 Skill 对比。请使用"执行流程"功能。');
+      setError('该执行记录未关联 Skill，无法进行 Skill 对比。请使用"流程解析"功能。');
       return;
     }
 

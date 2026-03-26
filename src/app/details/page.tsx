@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import ExecutionFlowComparison from '@/components/ExecutionFlowComparison';
 import { SkillLinks } from '@/components/SkillLink';
+import { useAuth } from '@/lib/auth-context';
 
 const Line = dynamic(() => import('recharts').then(mod => mod.Line), { ssr: false });
 const LineChart = dynamic(() => import('recharts').then(mod => mod.LineChart), { ssr: false });
@@ -87,6 +88,52 @@ interface Interaction {
     latency?: number;
 }
 
+interface EvaluationItem {
+    id: string;
+    type: 'root_cause' | 'key_action';
+    content: string;
+    match_score: number;
+    explanation: string;
+    weight: number;
+}
+
+function parseEvaluationItemsFromReason(judgmentReason: string): EvaluationItem[] {
+    const items: EvaluationItem[] = [];
+    if (!judgmentReason) return items;
+    
+    const lines = judgmentReason.split('\n');
+    const itemIndex = { rc: 0, ka: 0 };
+    
+    for (const line of lines) {
+        const rcMatch = line.match(/\*\*Root Cause\*\*\s*\[(.*?)\]\s*.*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
+        if (rcMatch) {
+            items.push({
+                id: `RC-${itemIndex.rc++}`,
+                type: 'root_cause',
+                content: rcMatch[1].replace(/\.{3}$/, ''),
+                match_score: parseInt(rcMatch[2]) / 100,
+                explanation: rcMatch[3].trim(),
+                weight: parseFloat(rcMatch[4])
+            });
+            continue;
+        }
+        
+        const kaMatch = line.match(/\*\*Key Action\*\*\s*\[(.*?)\]\s*.*?:\s*(\d+)%\s*match\.\s*(.+?)\s*\(Weight:\s*([\d.]+)\)/);
+        if (kaMatch) {
+            items.push({
+                id: `KA-${itemIndex.ka++}`,
+                type: 'key_action',
+                content: kaMatch[1].replace(/\.{3}$/, ''),
+                match_score: parseInt(kaMatch[2]) / 100,
+                explanation: kaMatch[3].trim(),
+                weight: parseFloat(kaMatch[4])
+            });
+        }
+    }
+    
+    return items;
+}
+
 const CustomTooltip = ({ content }: { content: string }) => {
     const [visible, setVisible] = useState(false);
     return (
@@ -107,7 +154,7 @@ const CustomTooltip = ({ content }: { content: string }) => {
                     color: '#f1f5f9',
                     padding: '6px 10px',
                     borderRadius: '4px',
-                    whiteSpace: 'normal',
+                    whiteSpace: 'pre-line',
                     minWidth: '280px',
                     maxWidth: '400px',
                     zIndex: 1000,
@@ -667,6 +714,7 @@ export default function DetailPageWrapper() {
 function DetailPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { user } = useAuth();
     const query = searchParams.get('query') || '';
     const framework = searchParams.get('framework') || '';
 
@@ -685,36 +733,11 @@ function DetailPage() {
     const [editResultValue, setEditResultValue] = useState('');
     const [resultSaveStatus, setResultSaveStatus] = useState<{ id: string; status: 'saving' | 'ok' | 'error'; msg?: string } | null>(null);
 
-    const [feedbackComments, setFeedbackComments] = useState<Record<string, string>>({});
     const [focusedStep, setFocusedStep] = useState<number | null>(null);
     const [showContextWindowChart, setShowContextWindowChart] = useState(false);
-
-    const submitDetailFeedback = async (item: Execution, type: 'like' | 'dislike' | null, comment?: string) => {
-        const taskId = item.task_id || item.upload_id || '';
-        const currentComment = feedbackComments[taskId] || item.user_feedback?.comment || '';
-        const newFeedback = { type, comment: comment !== undefined ? comment : currentComment };
-
-        // Optimistic Update
-        const newData = allData.map(d =>
-            (d.task_id === item.task_id || d.upload_id === item.upload_id)
-                ? { ...d, user_feedback: newFeedback }
-                : d
-        );
-        setAllData(newData);
-
-        try {
-            await fetch('/api/data', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    task_id: item.task_id,
-                    upload_id: item.upload_id,
-                    user_feedback: newFeedback
-                })
-            });
-            alert('保存成功');
-        } catch (e) { console.error(e); }
-    };
+    const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null);
+    const [failureFilter, setFailureFilter] = useState<'all' | 'failure' | 'anomaly'>('all');
+    const [failureSortBy, setFailureSortBy] = useState<'type' | 'time'>('type');
 
     // Auto-fetch expanded session
     useEffect(() => {
@@ -728,10 +751,16 @@ function DetailPage() {
 
     // Fetch executions list
     useEffect(() => {
-        fetch('/api/data', { cache: 'no-store' })
+        let url = '/api/data?';
+        const params = new URLSearchParams();
+        if (user) params.append('user', user);
+        if (query) params.append('query', query);
+        if (framework) params.append('framework', framework);
+        if (expandTaskId) params.append('taskId', expandTaskId);
+        fetch(url + params.toString(), { cache: 'no-store' })
             .then(res => res.json())
             .then((data: any[]) => {
-                // Filter immediately by Query & Framework
+                // Filter immediately by Query & Framework (data is mostly pre-filtered by backend now)
                 let targetQuery = query;
                 let targetFramework = framework;
 
@@ -757,7 +786,7 @@ function DetailPage() {
                 setAllData(filtered);
                 setLoading(false);
             });
-    }, [query, framework, expandTaskId]);
+    }, [query, framework, expandTaskId, user]);
 
     // Derived Data with Time Filter & Label Filter & Model Filter
     const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
@@ -920,6 +949,45 @@ function DetailPage() {
             contextWindow: ctxWindowData
         };
     }, [filteredData, comparisonDim]);
+    
+    // CPSR Trend Data Calculation
+    const cpsrTrendData = useMemo(() => {
+        if (filteredData.length === 0) return [];
+        
+        const sortedData = [...filteredData].sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        const dataWithCost = sortedData.filter(d => d.cost != null);
+        if (dataWithCost.length === 0) return [];
+        
+        const result: { timestamp: string; cpsr: number | null; avgCost: number; successRate: number; totalRuns: number }[] = [];
+        
+        let cumulativeCost = 0;
+        let cumulativeSuccesses = 0;
+        
+        dataWithCost.forEach((d, idx) => {
+            cumulativeCost += d.cost || 0;
+            if (d.is_answer_correct) cumulativeSuccesses++;
+            
+            const totalRuns = idx + 1;
+            const avgCost = cumulativeCost / totalRuns;
+            const successRate = cumulativeSuccesses / totalRuns;
+            const cpsr = successRate > 0 ? avgCost / successRate : null;
+            
+            if (cpsr !== null) {
+                result.push({
+                    timestamp: d.timestamp,
+                    cpsr,
+                    avgCost,
+                    successRate,
+                    totalRuns
+                });
+            }
+        });
+        
+        return result;
+    }, [filteredData]);
 
     // Toggle Expand
     const startEditQuery = (taskId: string, currentQuery: string) => {
@@ -970,7 +1038,8 @@ function DetailPage() {
                 router.push(`/details?${params.toString()}`);
             } else {
                 // Refresh data
-                const dataRes = await fetch('/api/data');
+                const refreshUrl = user ? `/api/data?user=${encodeURIComponent(user)}` : '/api/data';
+                const dataRes = await fetch(refreshUrl);
                 const data: any[] = await dataRes.json();
                 const filtered = data.filter(d =>
                     d.query === query &&
@@ -1026,7 +1095,8 @@ function DetailPage() {
             setEditResultValue('');
 
             // Refresh data
-            const dataRes = await fetch('/api/data');
+            const refreshUrl = user ? `/api/data?user=${encodeURIComponent(user)}` : '/api/data';
+            const dataRes = await fetch(refreshUrl);
             const data: any[] = await dataRes.json();
             const filtered = data.filter(d =>
                 d.query === query &&
@@ -1100,6 +1170,45 @@ function DetailPage() {
             String(d.getHours()).padStart(2, '0') + ':' +
             String(d.getMinutes()).padStart(2, '0') + ':' +
             String(d.getSeconds()).padStart(2, '0');
+    };
+
+    const formatTimestampForDisplay = (ts: number): string => {
+        if (!ts && ts !== 0) return '-';
+        const d = new Date(ts);
+        return d.getFullYear() + '/' +
+            String(d.getMonth() + 1).padStart(2, '0') + '/' +
+            String(d.getDate()).padStart(2, '0') + ' ' +
+            String(d.getHours()).padStart(2, '0') + ':' +
+            String(d.getMinutes()).padStart(2, '0') + ':' +
+            String(d.getSeconds()).padStart(2, '0') + '.' +
+            String(d.getMilliseconds()).padStart(3, '0');
+    };
+
+    const formatSessionForDisplay = (session: any): any => {
+        if (!session) return session;
+        const formatted = JSON.parse(JSON.stringify(session));
+        
+        if (formatted.startTime) {
+            formatted.startTime = formatTimestampForDisplay(formatted.startTime);
+        }
+        
+        if (Array.isArray(formatted.interactions)) {
+            formatted.interactions = formatted.interactions.map((interaction: any) => {
+                const formattedInteraction = { ...interaction };
+                if (formattedInteraction.timestamp) {
+                    formattedInteraction.timestamp = formatTimestampForDisplay(formattedInteraction.timestamp);
+                }
+                if (formattedInteraction.message?.timestamp) {
+                    formattedInteraction.message.timestamp = formatTimestampForDisplay(formattedInteraction.message.timestamp);
+                }
+                if (formattedInteraction.timeInfo?.created) {
+                    formattedInteraction.timeInfo.created = formatTimestampForDisplay(formattedInteraction.timeInfo.created);
+                }
+                return formattedInteraction;
+            });
+        }
+        
+        return formatted;
     };
 
     const handleExportHtml = () => {
@@ -1237,6 +1346,16 @@ function DetailPage() {
                     };
                 });
 
+                // Home Link - navigate to main page
+                const homeLink = document.getElementById('home-link');
+                if (homeLink) {
+                    homeLink.onclick = () => {
+                        window.location.href = '/';
+                    };
+                    homeLink.onmouseover = () => { homeLink.style.color = '#7dd3fc'; };
+                    homeLink.onmouseout = () => { homeLink.style.color = '#38bdf8'; };
+                }
+
                 // Charts Notice
                 console.log('Offline Mode: Charts are static snapshots.');
             })();
@@ -1275,8 +1394,17 @@ function DetailPage() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
                 }} title={query}>
-                    <span style={{ flexShrink: 0 }}>Details:</span>
-                    <span style={{ color: '#38bdf8', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span
+                        id="home-link"
+                        style={{ flexShrink: 0, cursor: 'pointer', color: '#38bdf8', transition: 'color 0.2s' }}
+                        onClick={() => router.push('/')}
+                        onMouseOver={(e) => e.currentTarget.style.color = '#7dd3fc'}
+                        onMouseOut={(e) => e.currentTarget.style.color = '#38bdf8'}
+                    >
+                        skill-insight
+                    </span>
+                    <span style={{ flexShrink: 0, color: '#334155' }}>|</span>
+                    <span style={{ color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {query}
                     </span>
                 </h1>
@@ -1578,7 +1706,7 @@ function DetailPage() {
 
 
             {/* Charts Section */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 <div className="card" style={cardStyle}>
                     <h3 style={chartTitleStyle}>
                         时延趋势 (秒)
@@ -1639,6 +1767,29 @@ function DetailPage() {
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
+                {cpsrTrendData.length > 0 && (
+                  <div className="card" style={cardStyle}>
+                      <h3 style={chartTitleStyle}>
+                          CPSR 趋势
+                          <CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} />
+                      </h3>
+                      <ResponsiveContainer width="100%" height={200}>
+                          <LineChart data={cpsrTrendData}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                              <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
+                              <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `$${v.toFixed(3)}`} />
+                              <Tooltip
+                                  formatter={(val: any, name: any) => {
+                                      if (name === 'CPSR') return [`$${val?.toFixed(4) || 'N/A'}`, 'CPSR'];
+                                      return [val, String(name)];
+                                  }}
+                                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
+                              />
+                              <Line type="monotone" dataKey="cpsr" name="CPSR" stroke="#a78bfa" strokeWidth={2} dot={true} />
+                          </LineChart>
+                      </ResponsiveContainer>
+                  </div>
+                )}
             </div>
 
             {/* Comparison Statistics Section */}
@@ -1708,42 +1859,6 @@ function DetailPage() {
                                 </LineChart>
                             </ResponsiveContainer>
                         </div>
-                        {compareDimData.contextWindow.length > 0 && (
-                            <div className="card" style={cardStyle}>
-                                <h3 style={chartTitleStyle}>
-                                    平均窗口% - {comparisonDim === 'label' ? '标签' : '模型'}
-                                    <CustomTooltip content="平均上下文窗口利用率 (%)" />
-                                </h3>
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <LineChart data={compareDimData.contextWindow}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis dataKey="name" tickFormatter={(v) => String(v)} stroke="#64748b" fontSize={11} />
-                                        <YAxis stroke="#64748b" fontSize={11} domain={[0, 100]} />
-                                        <Tooltip contentStyle={{ background: '#1e292b', borderColor: '#334155' }} />
-                                        <ReferenceLine y={90} stroke="#f87171" strokeDasharray="4 4" />
-                                        <Line type="monotone" dataKey="context_window_pct" stroke="#a78bfa" dot={true} strokeWidth={2} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
-                        {compareDimData.contextWindow.length > 0 && (
-                            <div className="card" style={cardStyle}>
-                                <h3 style={chartTitleStyle}>
-                                    平均窗口% - {comparisonDim === 'label' ? '标签' : '模型'}
-                                    <CustomTooltip content="平均上下文窗口利用率 (%)" />
-                                </h3>
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <LineChart data={compareDimData.contextWindow}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis dataKey="name" tickFormatter={(v) => String(v)} stroke="#64748b" fontSize={11} />
-                                        <YAxis stroke="#64748b" fontSize={11} domain={[0, 100]} />
-                                        <Tooltip contentStyle={{ background: '#1e292b', borderColor: '#334155' }} />
-                                        <ReferenceLine y={90} stroke="#f87171" strokeDasharray="4 4" />
-                                        <Line type="monotone" dataKey="context_window_pct" stroke="#a78bfa" dot={true} strokeWidth={2} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
                     </div>
                 </div>
             )}
@@ -1752,9 +1867,8 @@ function DetailPage() {
             <div className="list-container">
                 <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>执行记录详情</h2>
                 {/* Headers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '0.9rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '0.9rem' }}>
                     <div>时间 / ID</div>
-                    <div>状态</div>
                     <div>标签</div>
                     <div>时延</div>
                     <div>消耗</div>
@@ -1780,7 +1894,7 @@ function DetailPage() {
                             {/* Summary Row */}
                             <div
                                 className="record-summary"
-                                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s' }}
+                                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s' }}
                                 onClick={() => toggleExpand(taskId)}
                                 onMouseOver={(e: any) => e.currentTarget.style.background = '#334155'}
                                 onMouseOut={(e: any) => e.currentTarget.style.background = 'transparent'}
@@ -1788,15 +1902,6 @@ function DetailPage() {
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{formatFullTime(item.timestamp)}</div>
                                     <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{taskId}</div>
-                                </div>
-                                <div>
-                                    <span style={{
-                                        padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold',
-                                        background: item.answer_score === null ? 'rgba(148, 163, 184, 0.1)' : ((item.answer_score || 0) > 0.8 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)'),
-                                        color: item.answer_score === null ? '#94a3b8' : ((item.answer_score || 0) > 0.8 ? '#4ade80' : '#f87171')
-                                    }}>
-                                        {item.answer_score === null ? '--' : ((item.answer_score || 0) > 0.8 ? 'PASS' : 'FAIL')}
-                                    </span>
                                 </div>
                                 <div style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>
                                     {item.label || '-'}
@@ -1815,9 +1920,6 @@ function DetailPage() {
                                 <div style={{ color: item.context_window_pct != null ? (item.context_window_pct > 90 ? '#f87171' : '#4ade80') : '#94a3b8' }}>
                                     {item.context_window_pct != null ? `${item.context_window_pct.toFixed(1)}%` : '-'}
                                 </div>
-                                <div style={{ color: item.context_window_pct != null ? (item.context_window_pct > 90 ? '#f87171' : '#4ade80') : '#94a3b8' }}>
-                                    {item.context_window_pct != null ? `${item.context_window_pct.toFixed(1)}%` : '-'}
-                                </div>
                                 <div style={{ color: item.answer_score === null ? '#94a3b8' : ((item.answer_score || 0) > 0.8 ? '#4ade80' : '#f87171') }}>{item.answer_score === null ? '--' : item.answer_score?.toFixed(2)}</div>
                                 <div style={{ textAlign: 'center', color: '#94a3b8' }} className="expand-icon">
                                     {isExpanded ? '▲' : '▼'}
@@ -1827,7 +1929,7 @@ function DetailPage() {
                             {/* Details Expanded */}
                             <div className="record-detail" style={{ display: isExpanded ? 'block' : 'none', padding: '1.5rem', background: '#0f172a', borderTop: '1px solid #334155' }}>
                                 {/* Main Content Grid: Left (Result/Failures) vs Right (Skill Analysis) */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', marginBottom: '2rem', alignItems: 'start' }}>
 
                                     {/* --- LEFT COLUMN --- */}
                                     <div style={{ minWidth: 0 }}>
@@ -2033,45 +2135,222 @@ function DetailPage() {
                                             )}
                                         </div>
 
-                                        {/* 3. Judgment Reason */}
+                                        {/* 3. Judgment Reason - 表格形式 */}
                                         <div style={{ marginBottom: '1.5rem' }}>
                                             <h4 style={sectionHeader}>Judgment Reason</h4>
-                                            <div style={{
-                                                ...codeBlock,
-                                                background: '#1e293b',
-                                                padding: '1rem',
-                                                borderRadius: '6px',
-                                                border: '1px solid #334155'
-                                            }}>
-                                                {item.judgment_reason || '-'}
-                                            </div>
+                                            {(() => {
+                                                const evalItems = parseEvaluationItemsFromReason(item.judgment_reason || '');
+                                                if (evalItems.length === 0) {
+                                                    return (
+                                                        <div style={{
+                                                            ...codeBlock,
+                                                            background: '#1e293b',
+                                                            padding: '1rem',
+                                                            borderRadius: '6px',
+                                                            border: '1px solid #334155'
+                                                        }}>
+                                                            {item.judgment_reason || '-'}
+                                                        </div>
+                                                    );
+                                                }
+                                                return (
+                                                    <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflow: 'hidden' }}>
+                                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                                            <thead>
+                                                                <tr style={{ background: '#0f172a' }}>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '70px' }}>ID</th>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155' }}>评分标准</th>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px' }}>得分</th>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px' }}>权重</th>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px' }}>扣分</th>
+                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px' }}>关联</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {evalItems.map((evalItem, idx) => {
+                                                                    const isHighlighted = highlightedIssueId === evalItem.id;
+                                                                    const relatedSkillIssue = item.skill_issues?.find(si => si.id === evalItem.id);
+                                                                    const deduction = (1 - evalItem.match_score) * evalItem.weight;
+                                                                    return (
+                                                                        <tr 
+                                                                            key={idx} 
+                                                                            id={`eval-item-${taskId}-${evalItem.id}`}
+                                                                            style={{ 
+                                                                                background: isHighlighted ? 'rgba(56, 189, 248, 0.2)' : (idx % 2 === 0 ? '#1e293b' : '#1a2530'),
+                                                                                cursor: relatedSkillIssue ? 'pointer' : 'default',
+                                                                                transition: 'background 0.2s'
+                                                                            }}
+                                                                            onClick={() => {
+                                                                                if (relatedSkillIssue) {
+                                                                                    setHighlightedIssueId(isHighlighted ? null : evalItem.id);
+                                                                                    if (!isHighlighted) {
+                                                                                        setTimeout(() => {
+                                                                                            const container = document.getElementById(`skill-issues-container-${taskId}`);
+                                                                                            const el = document.getElementById(`skill-issue-${taskId}-${evalItem.id}`);
+                                                                                            if (container && el) {
+                                                                                                // First, scroll the page so the Skill Analysis container is visible
+                                                                                                container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                                                                                // Then, scroll within the container to the specific issue
+                                                                                                setTimeout(() => {
+                                                                                                    const containerRect = container.getBoundingClientRect();
+                                                                                                    const elRect = el.getBoundingClientRect();
+                                                                                                    const relativeTop = elRect.top - containerRect.top;
+                                                                                                    const targetScroll = container.scrollTop + relativeTop - container.clientHeight / 2 + elRect.height / 2;
+                                                                                                    container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+                                                                                                }, 300);
+                                                                                            }
+                                                                                        }, 50);
+                                                                                    }
+                                                                                }
+                                                                            }}
+                                                                            onMouseEnter={(e) => { if (!isHighlighted && relatedSkillIssue) e.currentTarget.style.background = 'rgba(56, 189, 248, 0.1)'; }}
+                                                                            onMouseLeave={(e) => { if (!isHighlighted && relatedSkillIssue) e.currentTarget.style.background = idx % 2 === 0 ? '#1e293b' : '#1a2530'; }}
+                                                                        >
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                                <span style={{
+                                                                                    background: evalItem.type === 'root_cause' ? '#f472b6' : '#38bdf8',
+                                                                                    color: '#0f172a',
+                                                                                    padding: '2px 8px',
+                                                                                    borderRadius: '4px',
+                                                                                    fontSize: '0.75rem',
+                                                                                    fontWeight: 'bold',
+                                                                                    whiteSpace: 'nowrap'
+                                                                                }}>
+                                                                                    {evalItem.id}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#e2e8f0' }}>
+                                                                                <div style={{ fontWeight: 500, marginBottom: '4px', wordBreak: 'break-word' }}>
+                                                                                    {relatedSkillIssue?.content || evalItem.content}
+                                                                                </div>
+                                                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', wordBreak: 'break-word' }}>{evalItem.explanation}</div>
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                                <span style={{ 
+                                                                                    color: evalItem.match_score >= 1 ? '#4ade80' : evalItem.match_score >= 0.5 ? '#fbbf24' : '#f87171',
+                                                                                    fontWeight: 'bold',
+                                                                                    whiteSpace: 'nowrap'
+                                                                                }}>
+                                                                                    {(evalItem.match_score * 100).toFixed(0)}%
+                                                                                </span>
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center', color: '#94a3b8' }}>
+                                                                                {evalItem.weight.toFixed(1)}
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                                <span style={{ 
+                                                                                    color: deduction > 0 ? '#f87171' : '#4ade80',
+                                                                                    fontWeight: 'bold',
+                                                                                    whiteSpace: 'nowrap'
+                                                                                }}>
+                                                                                    -{deduction.toFixed(2)}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                                {relatedSkillIssue && (
+                                                                                    <span style={{ 
+                                                                                        background: '#ef4444',
+                                                                                        color: '#fff',
+                                                                                        padding: '2px 6px',
+                                                                                        borderRadius: '4px',
+                                                                                        fontSize: '0.7rem',
+                                                                                        whiteSpace: 'nowrap'
+                                                                                    }}>
+                                                                                        Skill
+                                                                                    </span>
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
 
-                                        {/* 4. Failures Section */}
+                                        {/* 4. Failures Section - 表格形式 */}
                                         {item.failures && item.failures.length > 0 ? (
                                             <div style={{ marginBottom: '1.5rem' }}>
-                                                <h4 style={{ ...sectionHeader, color: '#f87171', borderLeft: '3px solid #f87171', paddingLeft: '8px', borderBottom: 'none' }}> Intermediate Failures / Anomalies </h4>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                                    {item.failures.map((fail, idx) => (
-                                                        <div key={idx} style={{ background: 'rgba(248, 113, 113, 0.1)', border: '1px solid #7f1d1d', borderRadius: '6px', padding: '1rem' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                                                <span style={{ background: '#f87171', color: '#0f172a', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                                                    {fail.failure_type}
-                                                                </span>
-                                                                <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>{fail.description}</span>
-                                                            </div>
-                                                            {fail.context && (
-                                                                <div style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: '#cbd5e1', fontFamily: 'monospace', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: '4px' }}>
-                                                                    {fail.context}
-                                                                </div>
-                                                            )}
-                                                            {fail.recovery && (
-                                                                <div style={{ fontSize: '0.9rem', color: '#86efac' }}>
-                                                                    <strong style={{ color: '#94a3b8' }}>Recovery:</strong> {fail.recovery}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                                    <h4 style={{ ...sectionHeader, color: '#f87171', borderLeft: '3px solid #f87171', paddingLeft: '8px', borderBottom: 'none', margin: 0 }}> Intermediate Failures / Anomalies </h4>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <select 
+                                                            value={failureFilter} 
+                                                            onChange={(e) => setFailureFilter(e.target.value as 'all' | 'failure' | 'anomaly')}
+                                                            style={{ 
+                                                                background: '#0f172a', 
+                                                                border: '1px solid #334155', 
+                                                                color: '#94a3b8', 
+                                                                borderRadius: '4px', 
+                                                                padding: '4px 8px', 
+                                                                fontSize: '0.8rem' 
+                                                            }}
+                                                        >
+                                                            <option value="all">全部</option>
+                                                            <option value="failure">失败</option>
+                                                            <option value="anomaly">异常</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflow: 'hidden' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                                        <thead>
+                                                            <tr style={{ background: '#0f172a' }}>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '100px' }}>类型</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155' }}>描述</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '150px' }}>恢复措施</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {item.failures
+                                                                .filter(fail => {
+                                                                    if (failureFilter === 'all') return true;
+                                                                    const type = fail.failure_type.toLowerCase();
+                                                                    if (failureFilter === 'failure') return type.includes('fail') || type.includes('error');
+                                                                    if (failureFilter === 'anomaly') return type.includes('anomaly') || type.includes('warn');
+                                                                    return true;
+                                                                })
+                                                                .map((fail, idx) => (
+                                                                <tr key={idx} style={{ background: idx % 2 === 0 ? '#1e293b' : '#1a2530' }}>
+                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
+                                                                        <span style={{ 
+                                                                            background: fail.failure_type.toLowerCase().includes('error') || fail.failure_type.toLowerCase().includes('fail') ? '#f87171' : '#fbbf24', 
+                                                                            color: '#0f172a', 
+                                                                            padding: '2px 8px', 
+                                                                            borderRadius: '4px', 
+                                                                            fontSize: '0.75rem', 
+                                                                            fontWeight: 'bold' 
+                                                                        }}>
+                                                                            {fail.failure_type}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
+                                                                        <div style={{ color: '#fca5a5', fontWeight: 500, marginBottom: '4px' }}>{fail.description}</div>
+                                                                        {fail.context && (
+                                                                            <div style={{ 
+                                                                                fontSize: '0.8rem', 
+                                                                                color: '#94a3b8', 
+                                                                                fontFamily: 'monospace', 
+                                                                                background: 'rgba(0,0,0,0.3)', 
+                                                                                padding: '6px 8px', 
+                                                                                borderRadius: '4px',
+                                                                                marginTop: '4px',
+                                                                                whiteSpace: 'pre-wrap',
+                                                                                wordBreak: 'break-all'
+                                                                            }}>
+                                                                                {fail.context}
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#86efac', fontSize: '0.8rem' }}>
+                                                                        {fail.recovery || '-'}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
                                             </div>
                                         ) : (
@@ -2082,7 +2361,7 @@ function DetailPage() {
                                     </div>
 
                                     {/* --- RIGHT COLUMN --- */}
-                                    <div style={{ minWidth: 0 }}>
+                                    <div style={{ minWidth: 0, position: 'sticky', top: '2rem', zIndex: 10 }}>
 
                                         {/* 1. Skills Used */}
                                         <div style={{ marginBottom: '2rem' }}>
@@ -2101,9 +2380,20 @@ function DetailPage() {
                                         <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', padding: '1rem' }}>
                                             <h4 style={{ ...sectionHeader, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                 <span>🛡️</span> Skill Analysis
+                                                {highlightedIssueId && (
+                                                    <span style={{ 
+                                                        fontSize: '0.75rem', 
+                                                        color: '#38bdf8', 
+                                                        background: 'rgba(56, 189, 248, 0.1)', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px',
+                                                        marginLeft: 'auto'
+                                                    }}>
+                                                        已选中: {highlightedIssueId}
+                                                    </span>
+                                                )}
                                             </h4>
 
-                                            {/* 新逻辑：使用 skill_issues 展示 */}
                                             {item.skill_issues && item.skill_issues.length > 0 ? (
                                                 <div>
                                                     <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2116,41 +2406,75 @@ function DetailPage() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Skill Issues 列表 */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
-                                                        {item.skill_issues.map((issue: any, idx: number) => (
-                                                            <div key={idx} style={{ padding: '10px', background: 'rgba(239, 68, 68, 0.1)', borderLeft: '3px solid #ef4444', borderRadius: '0 4px 4px 0' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                                                    <span style={{
-                                                                        background: issue.type === 'root_cause' ? '#f472b6' : '#38bdf8',
-                                                                        color: '#0f172a',
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: '4px',
-                                                                        fontSize: '0.7rem',
-                                                                        fontWeight: 'bold'
-                                                                    }}>
-                                                                        {issue.id}
-                                                                    </span>
-                                                                    <span style={{ color: '#fca5a5', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                                                                        得分: {((issue.match_score || 0) * 100).toFixed(0)}%
-                                                                    </span>
-                                                                </div>
-                                                                <div style={{ fontSize: '0.85rem', color: '#e2e8f0', marginBottom: '6px' }}>
-                                                                    <strong>评分标准：</strong>{issue.content}
-                                                                </div>
-                                                                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '6px' }}>
-                                                                    <strong>扣分原因：</strong>{issue.explanation}
-                                                                </div>
-                                                                <div style={{ fontSize: '0.8rem', color: '#fcd34d', marginBottom: '6px', fontStyle: 'italic' }}>
-                                                                    <strong>分析依据：</strong>{issue.reasoning}
-                                                                </div>
-                                                                {issue.improvement_suggestion && (
-                                                                    <div style={{ fontSize: '0.8rem', color: '#86efac', background: 'rgba(74, 222, 128, 0.1)', padding: '6px', borderRadius: '4px' }}>
-                                                                        <strong>💡 改进建议：</strong>{issue.improvement_suggestion}
+                                                    <div id={`skill-issues-container-${taskId}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto', position: 'relative' }}>
+                                                        {item.skill_issues.map((issue: any, idx: number) => {
+                                                            const isHighlighted = highlightedIssueId === issue.id;
+                                                            return (
+                                                                <div 
+                                                                    key={idx} 
+                                                                    id={`skill-issue-${taskId}-${issue.id}`}
+                                                                    data-issue-id={issue.id}
+                                                                    style={{ 
+                                                                        padding: '10px', 
+                                                                        background: isHighlighted ? 'rgba(56, 189, 248, 0.2)' : 'rgba(239, 68, 68, 0.1)', 
+                                                                        borderLeft: isHighlighted ? '3px solid #38bdf8' : '3px solid #ef4444', 
+                                                                        borderRadius: '0 4px 4px 0',
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.2s'
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        setHighlightedIssueId(isHighlighted ? null : issue.id);
+                                                                        if (!isHighlighted) {
+                                                                            setTimeout(() => {
+                                                                                const el = document.getElementById(`eval-item-${taskId}-${issue.id}`);
+                                                                                if (el) {
+                                                                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                                }
+                                                                            }, 50);
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                                        <span style={{
+                                                                            background: issue.type === 'root_cause' ? '#f472b6' : '#38bdf8',
+                                                                            color: '#0f172a',
+                                                                            padding: '2px 6px',
+                                                                            borderRadius: '4px',
+                                                                            fontSize: '0.7rem',
+                                                                            fontWeight: 'bold'
+                                                                        }}>
+                                                                            {issue.id}
+                                                                        </span>
+                                                                        <span style={{ color: '#fca5a5', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                                                            得分: {((issue.match_score || 0) * 100).toFixed(0)}%
+                                                                        </span>
+                                                                        {isHighlighted && (
+                                                                            <span style={{ 
+                                                                                fontSize: '0.7rem', 
+                                                                                color: '#38bdf8',
+                                                                                marginLeft: 'auto'
+                                                                            }}>
+                                                                                ← 点击左侧表格联动
+                                                                            </span>
+                                                                        )}
                                                                     </div>
-                                                                )}
-                                                            </div>
-                                                        ))}
+                                                                    <div style={{ fontSize: '0.85rem', color: '#e2e8f0', marginBottom: '6px' }}>
+                                                                        <strong>评分标准：</strong>{issue.content}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                                        <strong>扣分原因：</strong>{issue.explanation}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.8rem', color: '#fcd34d', marginBottom: '6px', fontStyle: 'italic' }}>
+                                                                        <strong>分析依据：</strong>{issue.reasoning}
+                                                                    </div>
+                                                                    {issue.improvement_suggestion && (
+                                                                        <div style={{ fontSize: '0.8rem', color: '#86efac', background: 'rgba(74, 222, 128, 0.1)', padding: '6px', borderRadius: '4px' }}>
+                                                                            <strong>💡 改进建议：</strong>{issue.improvement_suggestion}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -2176,59 +2500,6 @@ function DetailPage() {
                                     onStepClick={setFocusedStep}
                                 />
 
-                                {/* User Feedback */}
-                                <div style={{ marginBottom: '2rem', padding: '1.5rem', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
-                                    <h4 style={{ ...sectionHeader, marginBottom: '1rem' }}>用户反馈 (User Feedback)</h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, 'like'); }}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                    background: (item.user_feedback?.type === 'like') ? '#38bdf8' : '#0f172a',
-                                                    color: (item.user_feedback?.type === 'like') ? '#0f172a' : '#94a3b8',
-                                                    border: '1px solid #334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer',
-                                                    fontWeight: (item.user_feedback?.type === 'like') ? 'bold' : 'normal',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                👍 Like
-                                            </button>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, 'dislike'); }}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                    background: (item.user_feedback?.type === 'dislike') ? '#f87171' : '#0f172a',
-                                                    color: (item.user_feedback?.type === 'dislike') ? '#0f172a' : '#94a3b8',
-                                                    border: '1px solid #334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer',
-                                                    fontWeight: (item.user_feedback?.type === 'dislike') ? 'bold' : 'normal',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                👎 Dislike
-                                            </button>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                                            <textarea
-                                                value={feedbackComments[taskId] !== undefined ? feedbackComments[taskId] : (item.user_feedback?.comment || '')}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setFeedbackComments(prev => ({ ...prev, [taskId]: val }));
-                                                }}
-                                                onClick={e => e.stopPropagation()}
-                                                placeholder="添加评论 (可选)..."
-                                                style={{ flex: 1, minHeight: '60px', padding: '8px', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '4px', fontSize: '0.9rem' }}
-                                            />
-                                            <button
-                                                className="btn-primary"
-                                                onClick={(e) => { e.stopPropagation(); submitDetailFeedback(item, item.user_feedback?.type || null, feedbackComments[taskId]); }}
-                                                style={{ padding: '8px 16px', fontSize: '0.9rem', height: 'fit-content', whiteSpace: 'nowrap', background: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                                            >
-                                                保存评论
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
 
                                     {/* Runtime Metrics */}
                                     {(item.llm_call_count != null || item.tool_call_count != null || item.input_tokens != null || item.output_tokens != null || item.tool_call_error_count != null) && (
@@ -2322,7 +2593,7 @@ function DetailPage() {
                                                 <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '8px', overflow: 'hidden' }}>
                                                     <ReactJson
                                                         key={`json-${focusedStep !== null ? focusedStep : 'default'}`}
-                                                        src={session}
+                                                        src={formatSessionForDisplay(session)}
                                                         theme="monokai"
                                                         shouldCollapse={(field) => {
                                                             const path = [...(field.namespace || []), field.name]

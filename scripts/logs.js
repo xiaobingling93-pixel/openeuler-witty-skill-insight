@@ -12,7 +12,7 @@ async function run(options) {
     return
   }
   
-  console.log('=== Witty-Skill-Insight Service Logs ===\n')
+  console.log('=== Skill-Insight Service Logs ===\n')
   console.log('Press Ctrl+C to exit\n')
   
   const tail = spawn('tail', ['-f', logPath], { stdio: 'inherit' })

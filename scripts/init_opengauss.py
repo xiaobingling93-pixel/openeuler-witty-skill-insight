@@ -154,6 +154,21 @@ TABLE_DEFINITIONS = {
             ("matchedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
         "unique_constraints": []
+    },
+    "UserGuideState": {
+        "columns": [
+            ("id", "TEXT PRIMARY KEY"),
+            ("user", "TEXT UNIQUE NOT NULL"),
+            ("guideDisabled", "BOOLEAN DEFAULT FALSE"),
+            ("currentStep", "INTEGER DEFAULT 0"),
+            ("completedSteps", "TEXT DEFAULT '[]'"),
+            ("skippedSteps", "TEXT DEFAULT '[]'"),
+            ("lastShownAt", "TIMESTAMP"),
+            ("dismissedAt", "TIMESTAMP"),
+            ("createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
+        "unique_constraints": []
     }
 }
 

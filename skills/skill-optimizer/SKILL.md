@@ -1,8 +1,7 @@
-***
-
+---
 name: skill-optimizer
 description: Use when optimizing Agent Skill definitions via static compliance checks, LLM quality evaluations, runtime trace crystallization, or direct user revision requests. Supports static/dynamic/hybrid/feedback modes with snapshot versioning and interactive review loops.
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 # Skill 优化器 (Skill Optimizer)
 

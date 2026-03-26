@@ -3,7 +3,7 @@
 const { sleep } = require('./utils.js')
 
 async function run(options) {
-  console.log('=== Restarting Witty-Skill-Insight Service ===\n')
+  console.log('=== Restarting Skill-Insight Service ===\n')
   
   try {
     const stop = require('./stop.js')

@@ -105,6 +105,20 @@ const formatCost = (cost?: number) => {
     return `$${cost.toFixed(2)}`;
 };
 
+const calculateCPSR = (records: Execution[]): number | null => {
+    const recordsWithCost = records.filter(d => d.cost != null);
+    if (recordsWithCost.length === 0) return null;
+    
+    const totalRuns = recordsWithCost.length;
+    const successfulRuns = recordsWithCost.filter(d => d.is_answer_correct).length;
+    if (successfulRuns === 0) return null;
+    
+    const successRate = successfulRuns / totalRuns;
+    const avgCost = recordsWithCost.reduce((sum, d) => sum + (d.cost || 0), 0) / totalRuns;
+    
+    return avgCost / successRate;
+};
+
 const formatDateTime = (ts: string | Date) => {
     if (!ts) return '-';
     const d = new Date(ts);
@@ -184,11 +198,36 @@ const CustomTooltip = ({ content }: { content: React.ReactNode }) => {
 
 import { useAuth } from '@/lib/auth-context';
 import SkillRegistry from './SkillRegistry';
+import UserGuide, { GuideStep } from './UserGuide';
+import { useUserGuide } from '@/lib/use-user-guide';
+import { getFilteredSteps } from '@/lib/guide-config';
 
 // --- Main Component ---
 export default function Dashboard() {
     const { user, apiKey } = useAuth(); // Destructure apiKey from useAuth
     const [localApiKey, setLocalApiKey] = useState<string | null>(null);
+
+    const {
+        guideState,
+        loading: guideLoading,
+        shouldShowGuide,
+        setShouldShowGuide,
+        markStepSkipped,
+        disableGuide,
+        dismissForToday,
+    } = useUserGuide(user);
+
+    const [guideSteps, setGuideSteps] = useState<GuideStep[]>([]);
+
+    useEffect(() => {
+        if (guideState) {
+            const filtered = getFilteredSteps(
+                guideState.completedSteps,
+                guideState.skippedSteps
+            );
+            setGuideSteps(filtered);
+        }
+    }, [guideState]);
 
     // Setup local state for apiKey after mount to avoid hydration mismatch
     useEffect(() => {
@@ -387,7 +426,12 @@ export default function Dashboard() {
         if (id === activeConfigId) newActive = newConfigs[0]?.id || '';
 
         const payload = { activeConfigId: newActive, configs: newConfigs };
-        await fetch('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
+        const finalPayload = { settings: payload, user };
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalPayload)
+        });
         setAllConfigs(newConfigs);
         setActiveConfigId(newActive);
     };
@@ -1089,6 +1133,9 @@ export default function Dashboard() {
         
         const withCost = relevant.filter(d => d.cost != null);
         const avgCost = withCost.length ? withCost.reduce((sum, d) => sum + (d.cost || 0), 0) / withCost.length : null;
+        
+        // Calculate CPSR
+        const cpsr = calculateCPSR(relevant);
 
         return {
             count: relevant.length,
@@ -1097,6 +1144,7 @@ export default function Dashboard() {
             avgCost,
             globalSkillRecallRate: globalSkillRecallRate,
             querySkillRecallRate: querySkillRecallRate,
+            cpsr,
             avgAnsScore: relevant.filter(d => d.answer_score !== null).length ? (relevant.filter(d => d.answer_score !== null).reduce((sum, d) => sum + (d.answer_score || 0), 0) / relevant.filter(d => d.answer_score !== null).length) : 0,
             best: sorted[0],
             worst: sorted[sorted.length - 1],
@@ -1149,7 +1197,7 @@ export default function Dashboard() {
             <header className="header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <h1 className="title" style={{ marginBottom: 0 }}>Witty-Skill-Insight</h1>
+                        <h1 className="title" style={{ marginBottom: 0 }}>Skill-Insight</h1>
                         <span style={{ fontSize: '0.8rem', color: '#94a3b8', letterSpacing: '1px' }}>智能体技能评估、分析与优化</span>
                     </div>
 
@@ -1638,7 +1686,7 @@ export default function Dashboard() {
                                     yFormatter={formatTokens}
                                 />
                                 <ChartLayout
-                                    title={<span>平均准确率 <CustomTooltip content={<div>基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span>}
+                                    title={<span>平均准确率 <CustomTooltip content={<div>基于LLM评估所有执行结果与期望答案的差异，计算出的0-1分值的平均值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置（请在首页左上角的设置中配置 LLM）或者数据项未配置。</div>} /></span>}
                                     dataKey="score"
                                     unit=""
                                     data={comparisonData}
@@ -1799,6 +1847,9 @@ export default function Dashboard() {
                                     const worst = [...relevant].sort((a, b) => b.latency - a.latency)[0];
                                     const groupWithCost = relevant.filter(d => d.cost != null);
                                     const groupAvgCost = groupWithCost.length ? groupWithCost.reduce((sum, d) => sum + (d.cost || 0), 0) / groupWithCost.length : null;
+                                    
+                                    // Calculate CPSR for grouped view
+                                    const groupCpsr = calculateCPSR(relevant);
 
                                     // Calculate Skill Lift for grouped view (only for current label)
                                     let skillLift: number | null = null;
@@ -1842,7 +1893,7 @@ export default function Dashboard() {
                                                             (基于 {counts} 条记录)
                                                         </span>
                                                     </div>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', textAlign: 'center' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
                                                         <div>
                                                             <div className="text-sm text-slate-400">平均时延</div>
                                                             <div className="text-xl font-bold">{formatLatency(avgLat)}</div>
@@ -1857,7 +1908,11 @@ export default function Dashboard() {
                                                         </div>
                                                         <div>
                                                             <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
-                                                            <div className="text-xl font-bold">{groupAvgCost != null ? formatCost(groupAvgCost) : '-'}</div>
+                                                            <div className="text-xl font-bold" style={groupAvgCost == null ? { color: '#64748b' } : {}}>{groupAvgCost != null ? formatCost(groupAvgCost) : 'N/A'}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm text-slate-400">CPSR <CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                                            <div className="text-xl font-bold" style={{ color: groupCpsr != null ? '#38bdf8' : '#64748b' }}>{groupCpsr != null ? formatCost(groupCpsr) : 'N/A'}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1930,7 +1985,7 @@ export default function Dashboard() {
                                             (基于 {singleQueryStats.count} 条记录)
                                         </span>
                                     </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', textAlign: 'center' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', textAlign: 'center' }}>
                                         <div>
                                             <div className="text-sm text-slate-400">平均时延</div>
                                             <div className="text-xl font-bold">{formatLatency(singleQueryStats.avgLatency)}</div>
@@ -1949,7 +2004,11 @@ export default function Dashboard() {
                                         </div>
                                         <div>
                                             <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
-                                            <div className="text-xl font-bold">{singleQueryStats.avgCost != null ? formatCost(singleQueryStats.avgCost) : '-'}</div>
+                                            <div className="text-xl font-bold" style={singleQueryStats.avgCost == null ? { color: '#64748b' } : {}}>{singleQueryStats.avgCost != null ? formatCost(singleQueryStats.avgCost) : 'N/A'}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-slate-400">CPSR<CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                            <div className="text-xl font-bold" style={{ color: singleQueryStats.cpsr != null ? '#38bdf8' : '#64748b' }}>{singleQueryStats.cpsr != null ? formatCost(singleQueryStats.cpsr) : 'N/A'}</div>
                                         </div>
                                     </div>
 
@@ -2030,7 +2089,7 @@ export default function Dashboard() {
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>问题</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>时延 <CustomTooltip content="从请求发出到收到最终完整回复的总耗时" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Token <CustomTooltip content="输入 Prompt 与输出 Completion 的 Token 总和" /></span></th>
-                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异，给出0-1分值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置或者数据项未配置。</div>} /></span></th>
+                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异，给出0-1分值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置（请在首页左上角的设置中配置 LLM）或者数据项未配置。</div>} /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Est. Cost <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>模型</th>
 
@@ -3072,7 +3131,7 @@ export default function Dashboard() {
                                     <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#bae6fd', lineHeight: 1.5 }}>
                                             <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br />
-                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export WITTY_INSIGHT_API_KEY={localApiKey}</code>
+                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export SKILL_INSIGHT_API_KEY={localApiKey}</code>
                                         </p>
                                     </div>
                                 </div>
@@ -3082,6 +3141,70 @@ export default function Dashboard() {
                                 </div>
                             )}
 
+                        </div>
+
+                        {/* Guide Settings */}
+                        <div style={{ padding: '0 1.5rem 1.5rem' }}>
+                            <div style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '8px', border: '1px solid #334155' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <h4 style={{ margin: '0 0 0.25rem 0', color: '#f8fafc', fontSize: '0.95rem' }}>新手引导</h4>
+                                        <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
+                                            {guideState?.guideDisabled ? '引导已关闭' : '引导已开启'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (guideState?.guideDisabled) {
+                                                const res = await fetch('/api/guide', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'x-user-id': user!,
+                                                    },
+                                                    body: JSON.stringify({
+                                                        guideDisabled: false,
+                                                        dismissedAt: null,
+                                                    }),
+                                                });
+                                                if (res.ok) {
+                                                    window.location.reload();
+                                                }
+                                            } else {
+                                                const res = await fetch('/api/guide', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'x-user-id': user!,
+                                                    },
+                                                    body: JSON.stringify({
+                                                        currentStep: 0,
+                                                        completedSteps: [],
+                                                        skippedSteps: [],
+                                                        dismissedAt: null,
+                                                    }),
+                                                });
+                                                if (res.ok) {
+                                                    setShowUserModal(false);
+                                                    setShouldShowGuide(true);
+                                                }
+                                            }
+                                        }}
+                                        style={{
+                                            background: guideState?.guideDisabled ? '#4ade80' : '#38bdf8',
+                                            border: 'none',
+                                            color: '#0f172a',
+                                            padding: '0.5rem 1rem',
+                                            borderRadius: '6px',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    >
+                                        {guideState?.guideDisabled ? '启用引导' : '重新开始引导'}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Modal Footer */}
@@ -3167,6 +3290,23 @@ export default function Dashboard() {
         .dropdown-content { display: none; }
         .dropdown-trigger:hover + .dropdown-content, .dropdown-content:hover { display: block; }
       `}</style>
+
+            {/* User Guide */}
+            {shouldShowGuide && guideSteps.length > 0 && !guideLoading && (
+                <UserGuide
+                    steps={guideSteps}
+                    onComplete={async () => {
+                        setShouldShowGuide(false);
+                        await dismissForToday();
+                    }}
+                    onSkip={async (stepId) => {
+                        await markStepSkipped(stepId);
+                    }}
+                    onDontShowAgain={async () => {
+                        await disableGuide();
+                    }}
+                />
+            )}
         </div >
     );
 }

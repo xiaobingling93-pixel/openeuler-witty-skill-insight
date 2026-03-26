@@ -90,11 +90,15 @@ async function getApiKey(port) {
 
 async function callAutoSetup(port, apiKey) {
   return new Promise((resolve, reject) => {
+    const isWindows = process.platform === 'win32'
     const options = {
       hostname: 'localhost',
       port: port,
       path: `/api/setup/auto?apiKey=${encodeURIComponent(apiKey)}&host=localhost:${port}`,
-      method: 'GET'
+      method: 'GET',
+      headers: {
+        'x-platform': isWindows ? 'windows' : 'unix'
+      }
     }
     
     const req = http.request(options, (res) => {
@@ -146,7 +150,7 @@ async function run(options = {}) {
   
   console.log('🔧 【步骤 2/5】启动服务...')
   try {
-    const logPath = path.join(os.homedir(), '.witty', 'install.log')
+    const logPath = path.join(os.homedir(), '.skill-insight', 'install.log')
     const logDir = path.dirname(logPath)
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true })
@@ -188,14 +192,27 @@ async function run(options = {}) {
     }
     
     const scriptContent = await callAutoSetup(port, apiKey)
-    const scriptPath = path.join(os.homedir(), '.witty', 'auto_setup.sh')
+    const isWindows = process.platform === 'win32'
+    const scriptDir = path.join(os.homedir(), '.skill-insight')
     
-    fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
-    fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
-    console.log('   ✅ 配置脚本已下载')
+    fs.mkdirSync(scriptDir, { recursive: true })
     
-    console.log('   📋 请选择要安装的框架...')
-    await runCommand(`bash "${scriptPath}"`)
+    let scriptPath, executeCommand
+    if (isWindows) {
+      scriptPath = path.join(scriptDir, 'auto_setup.ps1')
+      fs.writeFileSync(scriptPath, scriptContent)
+      console.log('   ✅ 配置脚本已下载 (PowerShell)')
+      console.log('   📋 请选择要安装的框架...')
+      executeCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`
+    } else {
+      scriptPath = path.join(scriptDir, 'auto_setup.sh')
+      fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
+      console.log('   ✅ 配置脚本已下载 (Shell)')
+      console.log('   📋 请选择要安装的框架...')
+      executeCommand = `bash "${scriptPath}"`
+    }
+    
+    await runCommand(executeCommand)
     
     console.log('\n   ✅ 插件安装完成\n')
   } catch (error) {

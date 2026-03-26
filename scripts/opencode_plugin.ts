@@ -74,7 +74,7 @@ function getRequestOptions(targetUrl, apiKey, bodyLength) {
     let options = {
         hostname: targetUrl.hostname,
         port: targetUrl.port || (protocol === 'https:' ? 443 : 80),
-        path: path.join(targetUrl.pathname === '/' ? '' : targetUrl.pathname, '/api/upload'),
+        path: (targetUrl.pathname === '/' ? '' : targetUrl.pathname) + '/api/upload',
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ function getRequestOptions(targetUrl, apiKey, bodyLength) {
 function loadConfiguration() {
     let config = {};
     try {
-        const envPath = path.join(os.homedir(), '.witty', '.env');
+        const envPath = path.join(os.homedir(), '.skill-insight', '.env');
         if (fs.existsSync(envPath)) {
             const content = fs.readFileSync(envPath, 'utf8');
             content.split('\n').forEach(line => {
@@ -113,8 +113,8 @@ function loadConfiguration() {
         }
     } catch (e) {}
     return {
-        apiKey: config['WITTY_INSIGHT_API_KEY'] || process.env.WITTY_INSIGHT_API_KEY,
-        host: config['WITTY_INSIGHT_HOST'] || process.env.WITTY_INSIGHT_HOST
+        apiKey: config['SKILL_INSIGHT_API_KEY'] || process.env.SKILL_INSIGHT_API_KEY,
+        host: config['SKILL_INSIGHT_HOST'] || process.env.SKILL_INSIGHT_HOST
     };
 }
 
@@ -212,7 +212,7 @@ export default async function WittySkillInsightPlugin(input) {
 
   // Auto-Sync Skills on Startup
   try {
-     const syncScript = path.join(os.homedir(), '.witty', 'sync_skills.ts');
+     const syncScript = path.join(os.homedir(), '.skill-insight', 'sync_skills.ts');
      if (fs.existsSync(syncScript)) {
          const cp = require('child_process');
          // Run async to avoid blocking
@@ -658,16 +658,27 @@ try {
               // We must explicitly resolve the node binary path.
               let nodeBin = 'node';
               try {
-                  nodeBin = cp.execSync('which node', { encoding: 'utf8', timeout: 3000 }).trim() || 'node';
+                  const nodeCmd = process.platform === 'win32' ? 'where node' : 'which node';
+                  nodeBin = cp.execSync(nodeCmd, { encoding: 'utf8', timeout: 3000 }).trim() || 'node';
+                  if (process.platform === 'win32') {
+                      const lines = nodeBin.split('\n');
+                      nodeBin = lines[0].trim() || 'node';
+                  }
               } catch (e) {
                   logDebug(`Could not resolve node path, falling back to 'node'`);
               }
-              const shellCmd = `nohup "${nodeBin}" "${scriptPath}" > "${logPath}" 2>&1 &`;
-              logDebug(`Launching uploader via shell: ${shellCmd}`);
+              
+              logDebug(`Launching uploader: node=${nodeBin}, script=${scriptPath}`);
               try {
-                  cp.execSync(shellCmd, { stdio: 'ignore', timeout: 5000 });
+                  const uploader = cp.spawn(nodeBin, [scriptPath], {
+                      detached: true,
+                      stdio: ['ignore', fs.openSync(logPath, 'a'), fs.openSync(logPath, 'a')],
+                      windowsHide: true
+                  });
+                  uploader.unref();
+                  logDebug(`Uploader spawned successfully (PID: ${uploader.pid})`);
               } catch (spawnErr) {
-                  logDebug(`execSync uploader error: ${spawnErr.message}`);
+                  logDebug(`spawn uploader error: ${spawnErr.message}`);
               }
 
               /* 
