@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Witty-Skill-Insight",
+  title: "Skill-Insight",
   description: "AI 辅助编码与运维效能监测",
 };
 

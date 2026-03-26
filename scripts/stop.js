@@ -31,7 +31,7 @@ function killProcessByName(pattern) {
 async function run(options) {
   const port = getPort(options)
   
-  console.log(`=== Stopping Witty-Skill-Insight Service (Port: ${port}) ===\n`)
+  console.log(`=== Stopping Skill-Insight Service (Port: ${port}) ===\n`)
   
   const pid = findPidOnPort(port)
   

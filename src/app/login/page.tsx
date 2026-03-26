@@ -56,7 +56,7 @@ export default function LoginPage() {
                 whiteSpace: 'nowrap',
                 boxShadow: '0 10px 15px -3px rgba(56, 189, 248, 0.4), 0 4px 6px -2px rgba(56, 189, 248, 0.2)'
             }}>
-                Witty-Skill
+                Skill
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <h1 style={{ fontSize: '3rem', fontWeight: '800', color: '#f8fafc', margin: 0, lineHeight: 1, letterSpacing: '-0.02em', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>Insight</h1>

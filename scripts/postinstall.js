@@ -12,7 +12,7 @@ const {
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..')
 
-console.log('=== Witty-Skill-Insight Post-Install Initialization ===\n')
+console.log('=== Skill-Insight Post-Install Initialization ===\n')
 
 try {
   ensureEnvFile(PACKAGE_ROOT)

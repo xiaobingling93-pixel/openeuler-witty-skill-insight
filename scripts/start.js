@@ -72,11 +72,11 @@ async function createAdminUser(port) {
           try {
             const result = JSON.parse(data)
             if (result.apiKey) {
-              const wittyDir = path.join(os.homedir(), '.witty')
-              if (!fs.existsSync(wittyDir)) {
-                fs.mkdirSync(wittyDir, { recursive: true })
+              const skillInsightDir = path.join(os.homedir(), '.skill-insight')
+              if (!fs.existsSync(skillInsightDir)) {
+                fs.mkdirSync(skillInsightDir, { recursive: true })
               }
-              const keyFilePath = path.join(wittyDir, '.admin_api_key')
+              const keyFilePath = path.join(skillInsightDir, '.admin_api_key')
               fs.writeFileSync(keyFilePath, result.apiKey, 'utf8')
               console.log('✓ Admin user created successfully')
               console.log(`  API Key saved to: ${keyFilePath}`)
@@ -124,7 +124,7 @@ process.on('SIGTERM', () => {
 async function run(options) {
   const port = getPort(options)
   
-  console.log('=== Starting Witty-Skill-Insight Service ===\n')
+  console.log('=== Starting Skill-Insight Service ===\n')
   
   ensureEnvFile(PACKAGE_ROOT)
   ensureDataDirectory(PACKAGE_ROOT)
@@ -203,11 +203,11 @@ async function run(options) {
   
   let logPath
   if (isWindows) {
-    const wittyDir = path.join(os.homedir(), '.witty')
-    if (!fs.existsSync(wittyDir)) {
-      fs.mkdirSync(wittyDir, { recursive: true })
+    const skillInsightDir = path.join(os.homedir(), '.skill-insight')
+    if (!fs.existsSync(skillInsightDir)) {
+      fs.mkdirSync(skillInsightDir, { recursive: true })
     }
-    logPath = path.join(wittyDir, 'server.log')
+    logPath = path.join(skillInsightDir, 'server.log')
   } else {
     logPath = path.join(PACKAGE_ROOT, 'server.log')
   }

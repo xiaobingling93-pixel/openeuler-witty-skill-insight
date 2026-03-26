@@ -1401,7 +1401,7 @@ function DetailPage() {
                         onMouseOver={(e) => e.currentTarget.style.color = '#7dd3fc'}
                         onMouseOut={(e) => e.currentTarget.style.color = '#38bdf8'}
                     >
-                        witty-skill-insight
+                        skill-insight
                     </span>
                     <span style={{ flexShrink: 0, color: '#334155' }}>|</span>
                     <span style={{ color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis' }}>
