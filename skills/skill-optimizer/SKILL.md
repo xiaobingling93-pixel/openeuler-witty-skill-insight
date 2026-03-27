@@ -1,482 +1,222 @@
 ---
 name: skill-optimizer
-description: Use when optimizing Agent Skill definitions, including static compliance checks, quality evaluations, and experience-based improvements based on runtime feedback.
+description: Use when optimizing Agent Skill definitions via static compliance checks, LLM quality evaluations, runtime trace crystallization, or direct user revision requests. Supports static/dynamic/hybrid/feedback modes with snapshot versioning and interactive review loops.
 ---
 
 # Skill 优化器 (Skill Optimizer)
 
-## 概述 (Overview)
+## Overview
 
-本技能用于优化 Agent Skill 定义文件（SKILL.md），通过静态分析、质量评估和运行时反馈来持续改进 Skill 的质量。该框架支持"冷/热"双模优化架构，确保 Skill 从语法合规到业务逻辑的全面优化。
+本技能用于优化 Agent Skill 定义（`SKILL.md` 及其辅助文件）。支持四种原子优化模式，可单独执行或由 Agent 编排为顺序流程。
 
-## 优化框架架构
+DiagnosticMutator 可修改目标 Skill 目录下的 `SKILL.md` 及辅助文件（脚本、references 等），也可新建缺失的辅助文件。修改范围仅限目标 Skill 目录，不会触及 skill-optimizer 自身或其他 Skill。
 
-### 核心组件
+## 四种优化模式
 
-1. **SkillOptimizer (核心控制器)**: 整个优化流程的总指挥，负责调度冷/热启动策略
-2. **EvaluationAdapter (评估适配器)**: 负责对 Skill 进行全方位的"体检"，输出结构化的诊断结果
-3. **ExperienceCrystallizer (经验结晶器)**: 负责处理运行时反馈，将非结构化的测试报告转化为可执行的优化建议
-4. **DiagnosticMutator (诊断式变异器)**: 一个具备工具调用能力的 Agent，负责根据诊断结果对代码进行精准修改
+| 模式         | 含义                            | 适用场景             |
+| :--------- | :---------------------------- | :--------------- |
+| `static`   | 框架自动诊断（L1 静态合规 + L2 LLM 五维评估） | 用户无具体反馈，希望全面体检   |
+| `dynamic`  | 基于 Witty Insight 运行日志优化       | 有历史运行记录，想修复实际问题  |
+| `feedback` | 纯用户反馈驱动，不跑框架评估                | 用户有明确修改意见        |
+| `hybrid`   | static + dynamic 的快捷方式        | 全面体检 + 运行日志，一步到位 |
 
-## 优化分层
-
-框架支持三个层次的优化，覆盖了从语法合规到业务逻辑的完整生命周期。
-
-| 层次 | 名称 | 描述 | 适用场景 |
-| :--- | :--- | :--- | :--- |
-| **L1** | **Static Compliance (静态合规)** | 基于硬规则的检查，确保 Skill 符合基本的格式和规范 | 代码提交前、初次创建时 |
-| **L2** | **Static Quality (静态质量)** | 基于 LLM 的软性评估，从 5 个维度分析 Skill 的逻辑质量和清晰度 | 代码审查、冷启动优化 |
-| **L3** | **Dynamic Adaptation (动态适应)** | 基于运行时 Trace 和人工反馈的优化，解决实际运行中的 Edge Case 和逻辑漏洞 | 集成测试、线上运行、人工干预 |
-
-## 评估方式
-
-### Static Linter (静态检查器)
-
-**检查项：**
-- **YAML Frontmatter**: 检查 `name`, `description` 是否存在且格式正确（如 kebab-case）
-- **Length Check**: 检查内容长度是否超过阈值（如 5000 字符），防止 Context Window 溢出
-- **Header Structure**: 检查是否包含必要的章节标题
-
-### LLM 5D Assessment (五维评估)
-
-**五个维度 (5D)：**
-1. **Role (职责)**: 角色定义是否清晰？
-2. **Structure (结构)**: 格式是否规范？
-3. **Instruction (指令)**: 推理逻辑 (CoT) 是否连贯？
-4. **Content (内容)**: 知识库/少样本是否充分？
-5. **Risk (风险)**: 安全边界和权限控制是否完备？
-
-### Human Feedback (人工反馈/人在回路)
-
-允许人类专家直接提供自然语言建议。该建议会被作为最高优先级的 reflection 传递给 Mutator，强制 LLM 在修改代码时遵循该指令。
-
-### Runtime Feedback (运行时反馈)
-
-解析测试报告中的 `skill_issues` (技能缺陷) 和 `failures` (运行时异常)，将非结构化的错误描述转化为可执行的优化建议。
-
-## 准备工作
-
-在运行任何优化命令之前，请先完成以下准备工作。
-
-### 第1步：运行环境依赖检查
-
-**Python 工具链依赖**：需要预先安装 `uv` 命令行工具。
-首次运行推荐直接使用集成包装脚本，它会自动处理 Python 虚拟环境并安装依赖：
+**Review Loop 命令：**
 
 ```bash
-./scripts/opt.sh --help
+./scripts/opt.sh --action accept --input /path/to/skill_dir
+./scripts/opt.sh --action revert --target-version v0 --input /path/to/skill_dir
 ```
 
-如果检测到提示“未找到 'uv' 命令”，请按如下格式询问用户：
-
-```
-Question: "Skill Optimizer 需要 'uv' 作为 Python 环境管理器，但当前系统未安装。是否现在安装？"
-Options: "是，执行安装命令", "否，取消操作"
-```
-
-如果用户同意，执行：
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 第2步：获取模型配置
-
-**尝试自动获取配置（推荐）**
-
-运行模型配置检测脚本，自动从当前 AI 平台获取 API Key：
+**Diff 查看器：**
 
 ```bash
-python scripts/model_config_detector.py
+uv run python scripts/diff_viewer.py --snapshots /path/to/skill-snapshots --title "skill-name"
+uv run python scripts/diff_viewer.py --base /path/to/old --current /path/to/new --title "skill-name"
+uv run python scripts/diff_viewer.py <old_dir> <new_dir> --static diff.html --title "skill-name"
 ```
 
-该脚本会按优先级检测以下平台：
+***
 
-1. **Claude Code 平台**：检测环境变量 `ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL`
-2. **OpenCode 平台**：运行 `node scripts/opencode-model-detector.cjs`（如果存在）
-3. **Cursor/Windsurf 平台**：检测 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 等环境变量
+## 执行流程（按步骤编号）
 
-检测成功后，配置会自动写入本技能根目录的 `.env` 文件（即 `skills/skill-optimizer/.env`）。
+### 步骤 1：优化前引导
 
-**手动配置（如果自动检测失败）**
+收到用户优化请求后，Agent **必须先通过对话收集信息**，再决定执行策略：
 
-如果自动检测失败，按如下格式询问用户提供配置：
+**1.1 确认目标**：确认目标 Skill 路径（包含 `SKILL.md` 的目录）。
+
+**1.2 了解用户意图**：询问用户是否已有明确的优化方向或具体反馈。
+
+**1.3 是否结合运行日志**：询问用户是否希望拉取历史运行日志一起分析。
+
+- 是 → 确认 Witty Insight 平台可用（`~/.witty/.env` 或环境变量中有配置 `SKILL_INSIGHT_HOST` 和 `SKILL_INSIGHT_API_KEY`），不可用则提前告知用户并降级。
+
+**1.4 确定执行计划**：根据 1.2 和 1.3 的结果，确定需要执行的模式并告知用户。
+
+**简单场景**（单模式）：
 
 ```
-Question: "未找到有效的模型配置 (API Key)。请选择如何提供配置？"
-Options: "方式1（推荐）：提供 DeepSeek API Key", "方式2：提供通用 LLM API Key", "取消操作"
+Agent: 收到！在开始优化前想先确认几点：
+      1. 你对这个 Skill 有没有已知的问题或具体想改的地方？
+      2. 这个 Skill 之前跑过吗？需不需要我拉取运行日志一起分析？
+用户: 描述太长了，其他不用管，没有运行日志。
+Agent: 明白，我直接用你的反馈来优化。
 ```
 
-用户选择后，将配置写入本技能根目录的 `.env` 文件（请注意**必须**放在 `skill-optimizer` 的首层目录中）：
+**复杂场景**（多模式顺序编排）：
+
+当用户同时需要多种模式时，Agent 编排为顺序流程，每步之间显示 Diff 并确认：
+
+```
+用户: 描述太长了，其他你帮我全面看看就行，不需要运行日志。
+Agent: 明白，我用静态模式 + 你的反馈来优化。
+```
+
+```
+用户：全部要改，skill中还需增加关于硬件问题的排查和处理。
+Agent: 我会分步执行：
+      1. 先跑框架自动诊断（static）
+      2. 再根据运行日志优化（dynamic）
+      3. 最后根据你的反馈来调整（feedback）
+      每步完成后你都可以 review，不满意随时停。继续吗？
+```
+
+### 步骤 2：环境准备 (Setup)
+
+**所有命令必须在** **`skill-optimizer`** **目录下执行。**
 
 ```bash
-# 注意：务必确保是将配置写入到 skill-optimizer 目录下的 .env 中
-echo "DEEPSEEK_API_KEY=sk-xxxx" >> skills/skill-optimizer/.env
-echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/" >> skills/skill-optimizer/.env
-echo "DEEPSEEK_MODEL=deepseek-chat" >> skills/skill-optimizer/.env
+cd /path/to/.opencode/skills/skill-optimizer
+./scripts/opt.sh --help                                    # 检查环境、自动创建 .opt 虚拟环境并安装依赖
+uv run python scripts/model_config_detector.py             # 自动检测模型配置并写入 .env
+uv run python scripts/test_model_connectivity.py --env-file .env  # 连通性测试（必须通过才可继续）
 ```
 
-### 第3步：模型连通性测试
+环境异常时的交互处理见 [references/setup-interactions.md](references/setup-interactions.md)。
 
-在获取到模型配置后，必须先进行模型连通性测试，以确保后续操作顺利执行：
+### 步骤 3：执行优化
+
+> **⚠️ 运行框架重要提示 (Framework Notice)**：
+> 本 Skill 的执行涉及深度的静态分析、LLM 调用以及代码变异与验证。**完整优化流程的运行时长极有可能超过 10 分钟**。请调度本 Skill 的运行框架（Agent/Plugin）务必放宽调用超时限制（建议设置为 15 分钟或以上），以防因超时导致优化中断。
+
+根据步骤 1 确定的计划，依次执行对应模式。如果是多模式顺序编排，每个子步骤完成后都要执行步骤 3.2（Diff + Review），用户确认后再进入下一个子步骤。
+
+**3.1 执行优化命令**（示例）：
+
+根据步骤 1 确定的模式执行，例如：
 
 ```bash
-python scripts/test_model_connectivity.py --env-file skills/skill-optimizer/.env
+./scripts/opt.sh --action optimize --mode static   --input /path/to/skill_dir
+./scripts/opt.sh --action optimize --mode dynamic  --input /path/to/skill_dir
+./scripts/opt.sh --action optimize --mode hybrid   --input /path/to/skill_dir
+./scripts/opt.sh --action optimize --mode feedback --input /path/to/skill_dir --feedback "用户反馈的具体内容"
+./scripts/opt.sh --action optimize --mode feedback --input /path/to/skill_dir --feedback /path/to/feedback.txt
 ```
 
-如果测试通过，再进行后续任务。
+`--feedback` 参数接受字符串，可以是反馈内容本身，也可以是文件路径（自动识别）。
 
-如果测试不通过，则说明模型调用可能面临网络或配置问题，请停止优化并与用户交互，提示以下选项：
-```
-Question: "模型连通性测试未通过，请重新配置以确保后续流程顺利进行："
-Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 base_Url、api_key、model_name", "取消"
-```
-用户提供信息后，将配置更新至 `.env` 文件，并**再次执行连通性测试脚本**。只有且必须在该连通性测试通过后，才可进入接下来的优化流程，确保后续不会有模型调用问题。
+**3.2 显示 Diff**（每次优化完成后自动执行）：
 
-## 优化模式与使用流程
-
-### 1. 静态优化 (Static/Cold Start)
-
-**适用场景：** 初次创建 Skill 或仅需基于静态规则和 LLM 评估进行优化。
-
-**执行命令：**
 ```bash
-./scripts/opt.sh --mode static --input path/to/your/skill_dir
+uv run python scripts/diff_viewer.py --snapshots /path/to/skill-snapshots --title "skill-name"
 ```
 
-**操作步骤：**
-1. 解析输入路径的 Skill.md 文件
-2. 执行 Linter 静态检查（YAML 格式、长度限制等）
-3. 执行 LLM 5D 质量评估
-4. 生成诊断报告（Diagnoses）
-5. 使用 DiagnosticMutator 进行代码修复
-6. 保存优化后的 SKILL.md 和辅助文件
-7. 生成 OPTIMIZATION_REPORT.md 和 diagnoses.json
-8. 上传到 Witty Insight 平台并获取版本号
+**3.3 引导用户 Review**：
 
-### 2. 动态优化 (Dynamic/Experience Crystallization)
+Diff 页面打开后，Agent **不能沉默**，必须主动引导用户：
 
-**适用场景：** 已有运行日志 (Trace/Logs)，希望根据历史运行结果进行针对性优化。
+- 告知用户已打开 Diff 页面，可以查看优化前后的具体变化。
+- 请用户看完后反馈感受：满意就说 Accept，有想改的地方直接告诉 Agent 修改意见。
+- 提示用户也可以使用 Diff 页面上的 Accept / Revise / Revert 按钮快捷操作。
+- **如果是多步顺序流程**：确认用户满意当前步骤后再执行下一步，用户随时可以停止。
 
-**执行命令：**
-```bash
-./scripts/opt.sh --mode dynamic --input path/to/your/skill_dir
+**单模式示例**：
+
+```
+Agent: ✅ 优化完成！已打开 Diff 页面，你可以看看优化前后的变化。
+      看完后告诉我：
+      - 满意的话我就确认保存
+      - 有想调整的地方直接说，我继续改
+      - 也可以用 Diff 页面上的按钮快捷操作
 ```
 
-**操作步骤：**
-1. 解析输入路径的 Skill.md 文件
-2. 从 Witty Insight 平台获取历史运行日志（最近 3 条）
-3. 使用 ExperienceCrystallizer 解析运行日志
-4. 将运行时错误转化为优化建议
-5. 使用 DiagnosticMutator 进行代码修复
-6. 保存优化后的 SKILL.md 和辅助文件
-7. 生成 OPTIMIZATION_REPORT.md 和 diagnoses.json
-8. 上传到 Witty Insight 平台并获取版本号
+**多步流程示例**：
 
-### 3. 混合优化 (Hybrid)
-
-**适用场景：** 同时执行静态评估和基于运行日志的优化。
-
-**执行命令：**
-```bash
-./scripts/opt.sh --mode hybrid --input path/to/your/skill_dir
+```
+Agent: ✅ 静态优化完成！已打开 Diff 页面，你可以看看变化。
+      看完后告诉我：
+      - 满意的话我继续执行下一步（动态优化）
+      - 有想调整的地方直接说，我先改完再往下走
+      - 也可以到此为止，不继续后面的步骤了
 ```
 
-**操作步骤：**
-1. 首先执行静态优化流程（包括人工反馈处理）
-2. 然后执行热启动优化流程（基于运行日志）
-3. 合并所有诊断结果
-4. 保存最终优化的 Skill
-5. 生成完整的优化报告
-6. 上传到 Witty Insight 平台并获取版本号
+**3.4 重复 3.1-3.3**：如果有多个模式待执行，循环直到所有模式完成或用户选择停止。
 
-### 4. 带人工反馈的优化
+交互流程与快照版本结构详见 [references/diff-review-loop.md](references/diff-review-loop.md)。
 
-**适用场景：** 有人工提供的改进建议（存放在文本文件中）。
+### 步骤 4：加载到本地
 
-**执行命令：**
-```bash
-./scripts/opt.sh --mode static --input path/to/your/skill_dir --feedback path/to/feedback.txt
-```
-
-**操作步骤：**
-1. 从指定路径读取人工反馈内容
-2. 执行静态优化流程
-3. 将人工反馈作为最高优先级的 reflection 传递给 Mutator
-4. 根据人工反馈进行针对性修改
-5. 保存优化结果并上传
-
-## 环境变量配置
-
-### LLM (大模型) 配置
-
-**自动配置（推荐）**
-
-运行 `python scripts/model_config_detector.py` 自动检测并配置 API Key。支持的平台：
-- Claude Code（检测 `ANTHROPIC_AUTH_TOKEN` 环境变量）
-- OpenCode（运行 `node scripts/opencode-model-detector.cjs`）
-- Cursor/Windsurf（检测 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 环境变量）
-
-**手动配置**
-
-| 变量名 | 必选 | 说明 |
-| :--- | :--- | :--- |
-| `DEEPSEEK_API_KEY` | 是 | DeepSeek API 密钥（若不使用 DeepSeek，可配置 `OPENAI_API_KEY`） |
-| `DEEPSEEK_BASE_URL` | 否 | DeepSeek API 基础 URL，默认 `https://api.deepseek.com/` |
-| `DEEPSEEK_MODEL` | 否 | 使用的模型名称，默认 `deepseek-chat` |
-
-### Witty Insight 平台对接
-
-用于获取历史运行日志（Dynamic 模式需要）。在获取时，优化器会自动从 `~/.witty/.env` 中的 `WITTY_INSIGHT_HOST` 读取平台服务器 IP 进行请求，不需要再在本技能下重复配置。
-
-> **⚠️ 环境配置重要提示**：所有以上介绍的环境变量，**必须**配置在 `skills/skill-optimizer/.env` 文件中。如果不确定位置，优化器会在抛出错误时提示你预期的 `.env` 绝对路径。
-
-### 监控与反馈 (可选)
-
-| 变量名 | 必选 | 说明 |
-| :--- | :--- | :--- |
-| `LANGFUSE_PUBLIC_KEY` | 否 | Langfuse 公钥，用于记录优化 Trace |
-| `LANGFUSE_SECRET_KEY` | 否 | Langfuse 私钥 |
-| `HUMAN_FEEDBACK_FILE` | 否 | 默认的人工反馈文件路径 |
-
-### 路径与策略配置 (参考)
-
-| 变量名 | 说明 |
-| :--- | :--- |
-| `OPT_SKILLS_DIR` | 待优化的 Skill 默认目录路径（可选） |
-| `OPT_OUTPUT_DIR` | 优化结果默认输出目录（可选） |
-| `OPTIMIZATION_MAX_WORKERS` | 并行优化的最大工作线程数 |
-
-## 输出产物
-
-优化完成后，会在指定的输出目录（或输入目录同级）创建一个新的文件夹，命名格式为 `{original_name}-v{version}`，其中包含：
-
-- **SKILL.md**: 优化后的技能定义文件
-- **OPTIMIZATION_REPORT.md**: 详细的优化报告，记录了诊断结果和修改建议
-- **diagnoses.json**: 结构化的诊断数据
-- **VERSION.TXT**: 当前 Skill 的版本号
-- **辅助脚本**: 优化过程中创建或更新的相关 Python/Shell 脚本
-
-## 优化原则
-
-### 1. Generalize, Don't Hardcode (泛化，不要硬编码)
-
-如果特定文件路径（如 `/mnt/data/file.txt`）或进程 ID（如 `12345`）在 trace 中失败，**不要**硬编码该特定值。相反，写一个通用检查（例如，"检查所需配置文件是否存在"）。
-
-### 2. Graceful Degradation (优雅降级)
-
-如果非关键资源（如后台文档或可选配置）缺失，skill 不应崩溃或停止执行。添加步骤来"检查是否存在，如果不存在则警告并继续"，而不是"必须验证或停止"。仅在关键失败时阻止执行（例如，目标服务宕机）。
-
-### 3. Atomic Steps (原子步骤)
-
-将复杂操作分解为原子步骤（检查 -> 操作 -> 验证）。例如，不要写"终止进程"，而应写："1. 识别 PID。2. 终止 PID。3. 验证 PID 已消失。"
-
-### 4. Use Auxiliary Files (使用辅助文件)
-
-如果脚本或参考文档缺失或需要，创建它们！你有工具可以写入文件。不要害怕将复杂逻辑拆分为脚本或将文档移动到引用中。
-
-## 使用示例
-
-### 示例1：静态优化新创建的 Skill
-
-**用户请求：** "帮我优化一下这个 Skill 文件 path/to/my-skill/SKILL.md"
-
-**Agent响应：**
-1. 运行包装脚本检查环境：`./scripts/opt.sh --help`
-2. 自动获取模型配置：`python scripts/model_config_detector.py`
-3. 确认输入路径指向包含 SKILL.md 的目录
-4. 执行静态优化：`./scripts/opt.sh --mode static --input path/to/my-skill`
-5. 等待优化完成，查看生成的优化报告
-6. 询问用户是否加载到本地或上传
-
-### 示例2：基于运行日志优化已有 Skill
-
-**用户请求：** "这个 Skill 运行了几次有问题，帮我根据运行日志优化一下"
-
-**Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 确认 Skill 名称和路径
-4. 执行动态优化：`./scripts/opt.sh --mode dynamic --input path/to/my-skill`
-5. 优化器会自动获取历史运行日志
-6. 返回优化结果和版本号
-
-### 示例3：带人工反馈的优化
-
-**用户请求：** "根据我提供的反馈优化这个 Skill，反馈内容是..."
-
-**Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 将用户的反馈内容写入临时文件
-4. 执行优化：`./scripts/opt.sh --mode static --input path/to/my-skill --feedback path/to/feedback.txt`
-5. 优化器会优先处理人工反馈
-6. 返回优化结果
-
-### 示例4：混合模式优化
-
-**用户请求：** "全面优化这个 Skill，包括静态检查和运行日志分析"
-
-**Agent响应：**
-1. 运行包装脚本检查环境
-2. 自动获取模型配置
-3. 执行混合优化：`./scripts/opt.sh --mode hybrid --input path/to/my-skill`
-4. 先执行静态优化，再执行热启动优化
-5. 返回完整的优化结果
-
-## 优化完成后的后续步骤
-
-### 第5步：询问是否加载到本地项目（推荐）
-
-在技能优化成功后，询问用户是否将优化后的skill直接加载到当前项目的 `.opencode/skills` 目录下，以便立即使用。
-
-**询问方式**：
+所有优化步骤完成后，询问用户是否将优化后的 Skill 加载到当前项目：
 
 ```
 Question: "✅ Skill 优化完成！(位于 <output-path>/<skill-name>)。是否将此技能加载到当前项目的 .opencode/skills 目录下以便立即使用（需要重启）？"
 Options: "是，加载到 .opencode/skills 目录", "否，保持当前位置"
 ```
 
-**如果用户同意（加载到本地）**：
+**用户同意**：
 
-1. **确认项目结构**：检查当前项目是否有 `.opencode/skills` 目录
-   ```bash
-   # 检查 .opencode/skills 目录是否存在
-   if [ ! -d ".opencode/skills" ]; then
-       mkdir -p .opencode/skills
-   fi
-   ```
-
-2. **移动技能目录**：将优化后的skill移动到 `.opencode/skills` 目录
-   ```bash
-   # 假设优化后的skill在 /path/to/optimized-skills/skill-name/
-   # 移动到当前项目的 .opencode/skills/
-   mv /path/to/optimized-skills/skill-name/ .opencode/skills/
-   ```
-
-3. **验证移动成功**：
-   ```bash
-   # 检查技能是否成功移动
-   ls -la .opencode/skills/skill-name/
-   ```
-
-4. **提醒用户重启**：
-   ```
-   Question: "✅ 技能已成功加载到 .opencode/skills/<skill-name> ! 重要提示：需要重启 opencode 才能使技能生效。请选择后续操作："
-   Options: "收到，我稍后会重启应用"
-   ```
-
-**如果用户不同意（保持当前位置）**：
-
-```
-Question: "✅ 技能已优化并保持在当前位置：<output-path>/<skill-name>。如需使用，请后续执行 mv <output-path>/<skill-name>/ .opencode/skills/ 移动。请选择后续操作："
-Options: "收到"
-```
-
-### 第6步：上传至 Insight 平台（如果用户要求）
-
-如果用户在优化技能的指令中明确要求**"上传"、"同步"或"保存到 Insight"**，你必须在优化完成（前述步骤结束）、验证通过且目录存在后，主动调用skill-sync技能对优化后的新技能目录进行上传处理。
-
-**操作要求**：
-1. 确认输出目录中确实生成了包含 `SKILL.md` 的技能文件夹。
-2. 告知用户："正在启动 skill-sync 准备上传，由于涉及环境配置覆盖风险，我将调用系统上传组件。请关注接下来的终端询问确认。"
-3. 跨技能调用 `skill-sync` 技能，通过如下路径执行：
-   ```bash
-   node ../skill-sync/scripts/push.js <你在这个技能里刚刚生成的绝对路径/相对路径>
-   ```
-4. 请不要在这个技能内处理接口或网络请求上传，这是 `skill-sync` 的专属责任。
-
-## 诊断报告解读
-
-优化报告 (OPTIMIZATION_REPORT.md) 包含以下信息：
-
-### 1. 原始 Skill 概览
-
-- Skill 名称和描述
-- 原始内容的结构分析
-
-### 2. 诊断结果列表
-
-每个诊断项包含：
-- **Dimension**: 评估维度（Role、Structure、Instruction、Content、Risk、Execution）
-- **Issue Type**: 问题类型（如 Missing Section、Vague Instruction 等）
-- **Severity**: 严重程度（Critical、High、Medium、Low）
-- **Description**: 问题描述
-- **Suggested Fix**: 建议修复方案
-
-### 3. 优化后 Skill 概览
-
-- 修改摘要
-- 辅助文件变更列表
-
-### 4. 版本信息
-
-- 优化后的版本号
-- 上传状态
-
-## 故障排查
-
-### 问题1：依赖未安装
-
-**错误信息**：`ModuleNotFoundError: No module named 'langchain'` 或类似错误
-
-**原因**：虚拟环境未创建或未激活，依赖未安装到正确的环境中。
-
-**解决：**
-1. 创建虚拟环境：`uv venv .opt`（只需执行一次）
-2. 激活环境：`source .opt/bin/activate`（每次运行前执行）
-3. 安装依赖：`uv pip install -r requirements.txt`（只需执行一次）
-
-### 问题2：未安装 uv
-
-**错误信息**：`uv: command not found`
-
-**解决：**
 ```bash
-# Linux/macOS
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# 4.1 确认目录存在
+if [ ! -d ".opencode/skills" ]; then
+    mkdir -p .opencode/skills
+fi
 
-# 或使用 pip
-pip install uv
+# 4.2 移动优化后的 Skill
+mv /path/to/optimized-skills/skill-name/ .opencode/skills/
+
+# 4.3 验证
+ls -la .opencode/skills/skill-name/
 ```
 
-### 问题3：API Key 未配置
+然后提醒用户需要重启 opencode 才能生效。
 
-**错误信息**：`Neither DEEPSEEK_API_KEY nor OPENAI_API_KEY set.`
+**用户不同意**：告知 Skill 保持在当前位置，后续可手动 `mv <output-path>/<skill-name>/ .opencode/skills/`。
 
-**解决：**
-1. 运行自动检测：`python scripts/model_config_detector.py`
-2. 或手动编辑 `.env` 文件，填写 API Key
+### 步骤 5：上传至 Insight 平台（可选）
 
-### 问题4：找不到 SKILL.md
+**仅当用户明确要求"上传/同步/保存到 Insight"时执行。**
 
-**原因：** 输入路径不正确或不包含 SKILL.md 文件
+调用 `skill-sync` 技能：
 
-**解决：**
-- 确认输入路径是包含 SKILL.md 的目录，而不是 SKILL.md 文件本身
-- 使用 `path/to/your/skill_dir` 而不是 `path/to/your/skill_dir/SKILL.md`
+```bash
+node ../skill-sync/scripts/push.js <优化后的skill绝对路径>
+```
 
-### 问题5：LLM API 调用失败
+***
 
-**原因：** API 密钥未配置或网络问题
+## Outputs
 
-**解决：**
-- 检查 `.env` 文件中的 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`
-- 确认网络连接正常
-- 验证 `DEEPSEEK_BASE_URL` 设置正确
+- 默认情况下，优化器会在原始目录同级创建一个新的工作区：`{原始目录名}-optimized-{时间戳}/`。
+- 用户也可以通过 `--output /path/to/workspace` 指定输出目录。
+- **快照与诊断**：在新的工作区内，会生成 `snapshots/` 目录存放版本快照（`v0`, `v1`, `v1.1`, ...），每次优化产生的诊断与报告文件（如 `diagnoses.json`, `OPTIMIZATION_REPORT.md`）会写入对应的快照版本目录。
+  \- `snapshots/`：版本快照（`v0`, `v1`, `v1.1`, ...），每个版本含 `meta.json`。
+  \- `diagnoses.json`：结构化诊断数据。
+  \- `OPTIMIZATION_REPORT.md`：诊断结果 + 修改建议 + 版本信息。
+- **迭代优化**：当需要针对已优化的结果继续迭代（如使用 `feedback` 模式），将 `--input` 指向**新生成的工作区目录**即可。
 
-### 问题6：无法获取运行日志
+## 主要脚本 (Scripts)
 
-**原因：** Witty Insight 平台连接失败或 Skill 名称不匹配
+- `scripts/opt.sh`: 核心入口脚本。负责环境初始化、执行不同模式的优化操作（`optimize`）、接受优化结果（`accept`）以及版本回滚（`revert`）。
+- `scripts/diff_viewer.py`: Diff 可视化工具。用于在浏览器中直观对比优化前后的版本差异，支持按快照目录或指定新旧目录进行比对。
+- `scripts/model_config_detector.py`: 环境准备脚本。自动检测并提取当前环境的大模型配置，生成 `.env` 文件。
+- `scripts/test_model_connectivity.py`: 连通性测试脚本。用于检查大模型 API 是否可用，确保后续优化流程能够正常调用 LLM。
 
-**解决：**
-- 检查 `~/.witty/.env` 环境变量是否正确配置了 `WITTY_INSIGHT_HOST`。
-- 确认 Skill 的 YAML frontmatter 中的 `name` 字段与平台注册的名称一致
+## References
 
-### 问题7：上传失败
+- 架构与核心组件：[references/architecture.md](references/architecture.md)
+- 评估分层与诊断：[references/evaluation.md](references/evaluation.md)
+- Setup 异常交互模板：[references/setup-interactions.md](references/setup-interactions.md)
+- Diff Review Loop 与快照版本：[references/diff-review-loop.md](references/diff-review-loop.md)
+- 环境变量配置：[references/env-config.md](references/env-config.md)
+- 故障排查：[references/troubleshooting.md](references/troubleshooting.md)
 
-**原因：** 平台服务不可用或权限问题
-
-**解决：**
-- 检查平台服务状态
-- 验证用户权限
-- 查看错误日志中的详细信息

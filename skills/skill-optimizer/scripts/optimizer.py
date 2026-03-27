@@ -6,7 +6,6 @@ from architecture.genome import SkillGenome
 from engine.crystallizer import ExperienceCrystallizer, ReportParser
 from engine.evaluation_adapter import EvaluationAdapter
 from engine.mutator import DiagnosticMutator
-from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +24,10 @@ class SkillOptimizer:
         evaluator: EvaluationAdapter,
         mutator: DiagnosticMutator,
         crystallizer: ExperienceCrystallizer,
-        langfuse_client: Optional["Langfuse"] = None,
     ):
         self.evaluator = evaluator
         self.mutator = mutator
         self.crystallizer = crystallizer
-        self.langfuse = langfuse_client
 
     @classmethod
     def from_llm_client(cls, llm_client: Any) -> "SkillOptimizer":

@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -29,7 +30,7 @@ def test_connectivity(api_key, base_url, model):
             )
     else:
         if "chat/completions" not in url:
-            if url.endswith("v1/"):
+            if re.search(r"/v\d+/$", url):
                 url += "chat/completions"
             else:
                 url += "v1/chat/completions"
@@ -61,7 +62,8 @@ def test_connectivity(api_key, base_url, model):
         req = urllib.request.Request(
             url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
+        # 设置 180 秒超时，适配部分模型的响应时间波动
+        with urllib.request.urlopen(req, timeout=180) as response:
             result = json.loads(response.read().decode("utf-8"))
             print("✅ Connectivity test passed!")
             return True

@@ -1,11 +1,31 @@
 #!/usr/bin/env bash
 # 此脚本用于包装 skill-optimizer main.py，自动处理环境依赖与执行。
+# 支持并行环境检查以加速启动过程。
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 OPT_DIR="$(dirname "$SCRIPT_DIR")"
 VENV_DIR="$OPT_DIR/.opt"
+
+# 并行模式标志（默认启用，可通过 --serial 禁用）
+PARALLEL_MODE=true
+
+# 解析参数
+for arg in "$@"; do
+    if [ "$arg" == "--serial" ]; then
+        PARALLEL_MODE=false
+    fi
+done
+
+# 如果没有传递任何参数，提供默认帮助或行为，避免报错
+# 不过原逻辑直接传 "$@" 给 main.py，这里先过滤一下
+args_to_pass=()
+for arg in "$@"; do
+    if [ "$arg" != "--serial" ]; then
+        args_to_pass+=("$arg")
+    fi
+done
 
 # 1. 检查有没有安装 uv
 if ! command -v uv &> /dev/null; then
@@ -18,20 +38,135 @@ if ! command -v uv &> /dev/null; then
 fi
 
 cd "$OPT_DIR"
-if [ ! -d "$VENV_DIR" ]; then
-    echo "⏳ 正在初始化隔离的 Python 虚拟环境 (.opt)..."
-    uv venv "$VENV_DIR"
-    echo "⏳ 正在安装底层依赖项..."
-    # 强制静默或者显示进度安装依赖
-    uv pip install -r requirements.txt
-    echo "✅ 环境依赖准备完毕！"
-else
-    # 也可以轻量级地 verify 一下
-    uv pip install -r requirements.txt > /dev/null 2>&1 || {
-        echo "⏳ 正在更新底层依赖项..."
+
+# 设置虚拟环境变量，让 uv 能识别
+export VIRTUAL_ENV="$VENV_DIR"
+export PATH="$VENV_DIR/bin:$PATH"
+
+# 并行环境设置函数
+run_parallel_setup() {
+    echo "⏳ [并行模式] 正在初始化环境..."
+    
+    local deps_pid
+    local config_pid
+    local deps_status=0
+    local config_status=0
+    local deps_log=$(mktemp)
+    local config_log=$(mktemp)
+    
+    # 任务1: 安装/更新依赖（后台运行）
+    (
+        if [ ! -d "$VENV_DIR" ]; then
+            echo "  [依赖] 创建虚拟环境..." >> "$deps_log"
+            uv venv "$VENV_DIR" >> "$deps_log" 2>&1
+        fi
+        echo "  [依赖] 安装/更新依赖包..." >> "$deps_log"
+        uv pip install -r requirements.txt >> "$deps_log" 2>&1
+        echo "  [依赖] ✅ 完成" >> "$deps_log"
+    ) &
+    deps_pid=$!
+    
+    # 任务2: 检测模型配置（后台运行，并行执行）
+    (
+        echo "  [配置] 检测模型配置..." >> "$config_log"
+        uv run scripts/model_config_detector.py >> "$config_log" 2>&1 || true
+        echo "  [配置] ✅ 完成" >> "$config_log"
+    ) &
+    config_pid=$!
+    
+    # 显示进度指示器
+    echo "  ⏳ 等待任务完成..."
+    local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    while kill -0 $deps_pid 2>/dev/null || kill -0 $config_pid 2>/dev/null; do
+        i=$(( (i+1) % 10 ))
+        printf "\r  %s 处理中..." "${spinner:$i:1}"
+        sleep 0.1
+    done
+    printf "\r  ✅ 所有任务完成    \n"
+    
+    # 等待任务完成并获取状态
+    wait $deps_pid || deps_status=$?
+    wait $config_pid || config_status=$?
+    
+    # 显示任务结果
+    if [ $deps_status -ne 0 ]; then
+        echo "❌ [依赖] 设置失败:"
+        cat "$deps_log"
+    fi
+    
+    # 配置检测失败不阻塞（可能需要手动配置）
+    if [ $config_status -ne 0 ]; then
+        echo "⚠️  [配置] 自动检测未完成，可能需要手动配置"
+    fi
+    
+    # 清理临时文件
+    rm -f "$deps_log" "$config_log"
+    
+    if [ $deps_status -ne 0 ]; then
+        return 1
+    fi
+    
+    echo "✅ 环境准备完毕！"
+    return 0
+}
+
+# 串行环境设置函数（原有逻辑）
+run_serial_setup() {
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "⏳ 正在初始化隔离的 Python 虚拟环境 (.opt)..."
+        uv venv "$VENV_DIR"
+        echo "⏳ 正在安装底层依赖项..."
         uv pip install -r requirements.txt
-    }
+        echo "✅ 环境依赖准备完毕！"
+    else
+        uv pip install -r requirements.txt > /dev/null 2>&1 || {
+            echo "⏳ 正在更新底层依赖项..."
+            uv pip install -r requirements.txt
+        }
+    fi
+}
+
+# 快速检查函数（已有虚拟环境时）
+run_fast_check() {
+    # 并行验证依赖和配置
+    if [ "$PARALLEL_MODE" = true ]; then
+        local deps_pid
+        local deps_status=0
+        
+        # 后台验证依赖
+        (
+            uv pip install -r requirements.txt > /dev/null 2>&1
+        ) &
+        deps_pid=$!
+        
+        # 等待完成
+        wait $deps_pid || deps_status=$?
+        
+        if [ $deps_status -ne 0 ]; then
+            echo "⏳ 正在更新依赖..."
+            uv pip install -r requirements.txt
+        fi
+    else
+        uv pip install -r requirements.txt > /dev/null 2>&1 || {
+            echo "⏳ 正在更新底层依赖项..."
+            uv pip install -r requirements.txt
+        }
+    fi
+}
+
+# 主逻辑
+if [ ! -d "$VENV_DIR" ]; then
+    # 首次运行
+    if [ "$PARALLEL_MODE" = true ]; then
+        run_parallel_setup
+    else
+        run_serial_setup
+    fi
+else
+    # 已有虚拟环境，快速检查
+    run_fast_check
 fi
 
 echo "🚀 正在启动 Skill Optimizer..."
-uv run scripts/main.py "$@"
+uv run scripts/main.py "${args_to_pass[@]}"

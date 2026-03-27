@@ -95,8 +95,6 @@ class EvaluationAdapter:
         # We assume self.model_client is RealLLMClient which wraps ChatOpenAI in .llm
         llm_instance = getattr(self.model_client, "llm", self.model_client)
 
-        # We don't need to pass langfuse_client here because SkillEvaluator will rely on trace_id for callbacks
-        # But if we wanted to pass it, we could. For now, trace_id is sufficient for callbacks.
         evaluator = SkillEvaluator(llm_instance)
 
         # Pass trace_id to evaluate_meta
