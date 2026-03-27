@@ -583,10 +583,10 @@ def run_optimizer(
 
             elif mode == "feedback":
                 logger.info("Mode: Feedback (User Revision)")
-                logger.info("⏳ [进度] 正在执行反馈优化（基于你的修改意见）...")
+                logger.info("⏳ [进度] 正在执行反馈改写（基于你的修改意见）...")
                 logger.info("⏳ [进度] 预计需要 1-3 分钟，请耐心等待...")
                 logger.info("⏳ [进度] LLM 调用中...")
-                optimized_genome, diagnoses = optimizer.optimize_static(
+                optimized_genome, diagnoses = optimizer.optimize_feedback(
                     skill_file, human_feedback=human_feedback
                 )
 

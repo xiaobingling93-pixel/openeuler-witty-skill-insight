@@ -46,8 +46,11 @@ Rewrite the Skill and manage auxiliary files to address ALL diagnosed issues.
 - Maintain the original structure (Role, Instruction, Content, etc.) unless
   asked to change it.
 - Do NOT remove existing valid logic — only fix bugs or add missing parts.
-- The updated SKILL.md MUST be returned in your final response enclosed in a
-  single ```markdown ... ``` block.
+- If the tool write_skill_md_chunk(index, total, content) is available, you MUST
+  write the updated SKILL.md via that tool instead of placing it in the final message.
+- If that tool is NOT available, return the updated SKILL.md in your final response
+  enclosed in a single fenced code block. Use a fence of FOUR backticks for the outer block
+  (````markdown ... ````) so the SKILL.md can contain inner triple-backtick code fences.
 """
 
 
@@ -106,12 +109,16 @@ CRITICAL: Do NOT stop after outputting the plan. Continue immediately to tool ca
 - NEVER output file contents in your message — use the tool only.
 - NEVER mention or reference any scripts/references file unless it already existed or you created it via tools.
 
+## Tool Rules — write_skill_md_chunk
+- Write the COMPLETE SKILL.md via write_skill_md_chunk(index, total, content).
+- Use 1-based indices and keep total consistent across calls.
+- Chunk content must be raw SKILL.md text (no markdown fences).
+- Keep each chunk reasonably small (prefer <= 1500 characters).
+- Do NOT output any part of SKILL.md in your message.
+
 ## Step 3 — Final Output
-After all tool calls complete, output the rewritten SKILL.md in a single
-```markdown ... ``` block. That block must be the ONLY code block in your final message.
-Output the COMPLETE rewritten SKILL.md — every section, every step.
-Do not summarize, truncate, or use placeholders like "... (rest unchanged)".
-If the file is long, continue until the closing ``` is emitted.
+After all tool calls complete, output a short confirmation message (plain text).
+Do NOT include any code blocks in the final message.
 SKILL.md MUST NOT reference a file unless it already existed or you created/updated it via tools.
 SKILL.md SHOULD reference key entrypoint scripts and key references where relevant.
 """
