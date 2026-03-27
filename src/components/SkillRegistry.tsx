@@ -78,11 +78,11 @@ function SkillUpload({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="upload-card">
       <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#475569' }}>📂</div>
-      <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem', color: '#f8fafc' }}>Upload Skill Folder</h3>
+      <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem', color: '#f8fafc' }}>上传 Skill</h3>
       <p style={{ color: '#94a3b8', marginBottom: '1.5rem', maxWidth: '400px', fontSize: '0.9rem', lineHeight: 1.5 }}>
-        Select the folder containing <code>SKILL.md</code>.
-        <br /><span style={{ color: '#fbbf24' }}>Note: Upload the entire folder structure.</span>
-        <br /><span style={{ color: '#f87171', fontWeight: 'bold' }}>Important: Folder name must NOT contain Chinese characters.</span>
+        选择包含 <code>SKILL.md</code>的文件夹。
+        <br /><span style={{ color: '#fbbf24' }}>注意: 请上传整个文件夹</span>
+        <br /><span style={{ color: '#f87171', fontWeight: 'bold' }}>重要: 文件夹名称不得包含中文字符。</span>
       </p>
 
       <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -91,7 +91,7 @@ function SkillUpload({ onSuccess }: { onSuccess: () => void }) {
           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', fontSize: '1rem' }}
           onClick={() => fileInputRef.current?.click()}
         >
-          <span>Select Folder</span>
+          <span>选择文件夹</span>
         </button>
         <input
           ref={fileInputRef}
@@ -219,9 +219,9 @@ function SkillVersionDetailModal({ skillId, version, onClose }: { skillId: strin
                 </div>
 
                 <div>
-                    <h4 style={{ color: '#94a3b8', marginBottom: '0.5rem', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Changelog</h4>
+                    <h4 style={{ color: '#94a3b8', marginBottom: '0.5rem', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>变更历史</h4>
                     <div style={{ background: '#0f172a', padding: '1rem', borderRadius: '6px', color: '#e2e8f0', whiteSpace: 'pre-wrap', border: '1px solid #334155', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                        {detail.changeLog || <span style={{ color: '#64748b', fontStyle: 'italic' }}>No changelog provided.</span>}
+                        {detail.changeLog || <span style={{ color: '#64748b', fontStyle: 'italic' }}>无变更历史</span>}
                     </div>
                 </div>
 
@@ -468,7 +468,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
           <div>
             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: 'white' }}>{skill.name}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.875rem', color: '#94a3b8' }}>
-              <span>Current Active:</span>
+              <span>当前使用 (Active):</span>
               <span style={{ color: '#4ade80', fontFamily: 'monospace', fontWeight: 'bold', background: 'rgba(74, 222, 128, 0.1)', padding: '0 6px', borderRadius: '4px' }}>v{currentActiveVersion}</span>
             </div>
           </div>
@@ -478,7 +478,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
               style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
               onClick={() => versionFileInputRef.current?.click()}
             >
-              <span>📤 Upload New Version</span>
+              <span>📤 上传新版本</span>
             </button>
             <button
               onClick={handleClose}
@@ -504,8 +504,8 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
           <table className="version-table w-full text-left order-collapse">
             <thead>
               <tr>
-                <th style={{ width: '120px' }}>Version</th>
-                <th>Changelog</th>
+                <th style={{ width: '120px' }}>版本</th>
+                <th>变更历史</th>
                 <th style={{ textAlign: 'right', width: '220px' }}>Action</th>
               </tr>
             </thead>
@@ -537,7 +537,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
                     </td>
                     <td>
                       <p style={{ margin: 0, color: '#e2e8f0', whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.9rem' }}>
-                        {v.changeLog || <span style={{ color: '#64748b', fontStyle: 'italic' }}>No changelog provided</span>}
+                        {v.changeLog || <span style={{ color: '#64748b', fontStyle: 'italic' }}>无变更历史</span>}
                       </p>
                     </td>
                     <td style={{ textAlign: 'right', minWidth: '280px' }}>
@@ -554,7 +554,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
                               minWidth: '60px'
                             }}
                           >
-                            View
+                            查看
                           </button>
                           
                           {!isActive ? (
@@ -572,7 +572,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
                                   minWidth: '85px'
                                 }}
                               >
-                                Set Active
+                                激活 (set active)
                               </button>
                               <button
                                 onClick={() => handleDeleteVersion(v.version)}
@@ -602,7 +602,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
                               whiteSpace: 'nowrap'
                             }}>
                               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80' }}></span>
-                              Current
+                              当前
                             </span>
                           )}
                       </div>
@@ -617,7 +617,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
           {versions.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', color: '#64748b' }}>
               <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>📂</div>
-              <p>No versions history found.</p>
+              <p>没有历史版本</p>
             </div>
           )}
         </div>
@@ -722,12 +722,12 @@ function SkillCatalog({ refresh }: { refresh: number }) {
         border: '1px solid #334155'
       }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.875rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Total Skills</span>
+          <span style={{ fontSize: '0.875rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Skill 总数</span>
           <span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#f8fafc', lineHeight: 1 }}>{totalSkills}</span>
         </div>
         <div style={{ width: '1px', background: '#334155' }}></div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.875rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Uploaded Skills</span>
+          <span style={{ fontSize: '0.875rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>已上传 Skill</span>
           <span style={{ fontSize: '2.5rem', fontWeight: 700, color: '#4ade80', lineHeight: 1 }}>{uploadedSkills}</span>
         </div>
       </div>
@@ -787,7 +787,7 @@ function SkillCatalog({ refresh }: { refresh: number }) {
                   transition: 'all 0.2s'
                 }}
               >
-                {skill.isUploaded ? '☁️ Active' : '☁️ Upload'}
+                {skill.isUploaded ? '☁️ 激活' : '☁️ 未激活'}
               </button>
 
               <button
@@ -795,7 +795,7 @@ function SkillCatalog({ refresh }: { refresh: number }) {
                 className="btn-manage"
               >
                 <span>⚙️</span>
-                <span>Manage Versions</span>
+                <span>版本管理</span>
               </button>
               <button
                 onClick={() => handleDelete(skill.id)}
@@ -812,8 +812,8 @@ function SkillCatalog({ refresh }: { refresh: number }) {
         {skills.length === 0 && (
           <div className="upload-card" style={{ gridColumn: '1 / -1', background: 'transparent', borderStyle: 'dashed' }}>
             <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>📦</div>
-            <p style={{ color: '#94a3b8', fontSize: '1.2rem' }}>No skills yet.</p>
-            <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.5rem' }}>Upload a skill folder to get started.</p>
+            <p style={{ color: '#94a3b8', fontSize: '1.2rem' }}>无 skill</p>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.5rem' }}>上传 skill</p>
           </div>
         )}
       </div>
@@ -841,13 +841,13 @@ export default function SkillRegistry() {
           onClick={() => setActiveTab('catalog')}
           className={`nav-tab-item ${activeTab === 'catalog' ? 'active' : ''}`}
         >
-          Skill Catalog
+          Skill 管理
         </button>
         <button
           onClick={() => setActiveTab('upload')}
           className={`nav-tab-item ${activeTab === 'upload' ? 'active' : ''}`}
         >
-          Upload New Skill
+          上传 Skill
         </button>
       </div>
 

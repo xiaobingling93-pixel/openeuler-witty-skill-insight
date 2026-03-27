@@ -1233,13 +1233,13 @@ export default function Dashboard() {
                         </select>
                         {allConfigs.length > 0 ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #334155', borderRadius: '4px', padding: '4px 8px', background: '#0f172a' }}>
-                                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Eval:</span>
+                                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>模型:</span>
                                 <select
                                     value={activeConfigId || 'none'}
                                     onChange={(e) => activateConfig(e.target.value)}
                                     style={{ background: 'transparent', color: '#e2e8f0', border: 'none', maxWidth: '140px', outline: 'none', cursor: 'pointer' }}
                                 >
-                                    <option value="none">不进行评估 (No Eval)</option>
+                                    <option value="none">未配置模型</option>
                                     {allConfigs.map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
@@ -1290,7 +1290,7 @@ export default function Dashboard() {
                         {!editingConfigId && (
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
-                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>Manage Evaluation Models</h3>
+                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>管理模型配置</h3>
                                     <button onClick={() => setShowSettingsModal(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
                                 </div>
 
@@ -1353,7 +1353,7 @@ export default function Dashboard() {
                                     onClick={() => {
                                         setTempConfig({
                                             id: 'new',
-                                            name: 'New Configuration',
+                                            name: '新配置',
                                             provider: 'deepseek',
                                             model: 'deepseek-chat',
                                             apiKey: '',
@@ -1363,7 +1363,7 @@ export default function Dashboard() {
                                         setSettingsStatus(null);
                                     }}
                                 >
-                                    + Add New Configuration
+                                    + 添加新配置
                                 </button>
                             </>
                         )}
@@ -1372,7 +1372,7 @@ export default function Dashboard() {
                         {editingConfigId && (
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
-                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>{editingConfigId === 'new' ? 'New Configuration' : 'Edit Configuration'}</h3>
+                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>{editingConfigId === 'new' ? '新配置' : '编辑'}</h3>
                                     <button
                                         onClick={() => setEditingConfigId(null)}
                                         style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.9rem', cursor: 'pointer' }}
@@ -1525,7 +1525,7 @@ export default function Dashboard() {
                             return (
                                 <div className="card" key={fw} style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}>
                                     <div className="card-title" style={{ color: COLORS[idx % COLORS.length] }}>{fw}</div>
-                                    <div className="stat-value">{fwData.length} <small style={{ fontSize: '1rem', color: '#64748b' }}>Executions</small></div>
+                                    <div className="stat-value">{fwData.length} <small style={{ fontSize: '1rem', color: '#64748b' }}>执行数</small></div>
                                     <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem' }}>
                                         {/* Latency */}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1577,20 +1577,20 @@ export default function Dashboard() {
                         )}
 
                         <div style={{ marginLeft: '10px', display: 'flex', gap: '8px', borderLeft: '1px solid #475569', paddingLeft: '10px' }}>
-                            <span style={{ color: '#94a3b8', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>Group By:</span>
+                            <span style={{ color: '#94a3b8', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>分类:</span>
                             <button
                                 className={`tab-btn-sm ${comparisonDimension === 'framework' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('framework')}
                                 style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'framework' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'framework' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
                             >
-                                Framework
+                                框架
                             </button>
                             <button
                                 className={`tab-btn-sm ${comparisonDimension === 'model' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('model')}
                                 style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'model' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'model' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
                             >
-                                Model
+                                模型
                             </button>
                         </div>
 
@@ -1907,11 +1907,11 @@ export default function Dashboard() {
                                                             <div className="text-xl font-bold" style={{ color: avgSc > 0.8 ? '#4ade80' : '#fbbf24' }}>{avgSc.toFixed(2)}</div>
                                                         </div>
                                                         <div>
-                                                            <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
+                                                            <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="根据默认定价或自定义（custom-models.json）定价估算得出。" /></div>
                                                             <div className="text-xl font-bold" style={groupAvgCost == null ? { color: '#64748b' } : {}}>{groupAvgCost != null ? formatCost(groupAvgCost) : 'N/A'}</div>
                                                         </div>
                                                         <div>
-                                                            <div className="text-sm text-slate-400">CPSR <CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                                            <div className="text-sm text-slate-400">CPSR <CustomTooltip content={"单次成功解决成本：每次任务成功解决的平均开销。\n计算公式：（总成本）÷（成功解决的运行次数）"} /></div>
                                                             <div className="text-xl font-bold" style={{ color: groupCpsr != null ? '#38bdf8' : '#64748b' }}>{groupCpsr != null ? formatCost(groupCpsr) : 'N/A'}</div>
                                                         </div>
                                                     </div>
@@ -1929,7 +1929,7 @@ export default function Dashboard() {
                                                     <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => {
                                                         const url = `/details?framework=${encodeURIComponent(best.framework)}&expandTaskId=${best.task_id || best.upload_id}`;
                                                         window.open(url, '_blank');
-                                                    }}>View Log &gt;</div>
+                                                    }}>查看 &gt;</div>
                                                 </div>
                                                 <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                                     <div>
@@ -1940,7 +1940,7 @@ export default function Dashboard() {
                                                             Cost: {formatCost(worst.cost) || '-'}
                                                         </div>
                                                     </div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(worst.framework)}&query=${encodeURIComponent(worst.query)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>View Log &gt;</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(worst.framework)}&query=${encodeURIComponent(worst.query)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>查看 &gt;</div>
                                                 </div>
                                                 {/*Skill Lift*/}
                                                 {drillDownGroupByLabel && skillLift !== null && (
@@ -2003,11 +2003,11 @@ export default function Dashboard() {
                                             <div className="text-xl font-bold" style={{ color: singleQueryStats.avgAnsScore > 0.8 ? '#4ade80' : '#fbbf24' }}>{singleQueryStats.avgAnsScore.toFixed(2)}</div>
                                         </div>
                                         <div>
-                                            <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></div>
+                                            <div className="text-sm text-slate-400">平均成本 <CustomTooltip content="根据默认定价或自定义（custom-models.json）定价估算得出。" /></div>
                                             <div className="text-xl font-bold" style={singleQueryStats.avgCost == null ? { color: '#64748b' } : {}}>{singleQueryStats.avgCost != null ? formatCost(singleQueryStats.avgCost) : 'N/A'}</div>
                                         </div>
                                         <div>
-                                            <div className="text-sm text-slate-400">CPSR<CustomTooltip content={"Cost Per Successful Resolution: Average cost per successful task resolution.\nFormula: (total cost) / (number of runs with successful resolutions)"} /></div>
+                                            <div className="text-sm text-slate-400">CPSR<CustomTooltip content={"单次成功解决成本：每次任务成功解决的平均开销。\n计算公式：（总成本）÷（成功解决的运行次数）"} /></div>
                                             <div className="text-xl font-bold" style={{ color: singleQueryStats.cpsr != null ? '#38bdf8' : '#64748b' }}>{singleQueryStats.cpsr != null ? formatCost(singleQueryStats.cpsr) : 'N/A'}</div>
                                         </div>
                                     </div>
@@ -2023,7 +2023,7 @@ export default function Dashboard() {
                                             Time: {formatDateTime(singleQueryStats.best.timestamp)}
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&query=${encodeURIComponent(singleQueryStats.best.query)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>View Log &gt;</div>
+                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&query=${encodeURIComponent(singleQueryStats.best.query)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>查看 &gt;</div>
                                 </div>
                                 <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                     <div>
@@ -2037,7 +2037,7 @@ export default function Dashboard() {
                                     <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => {
                                         const url = `/details?framework=${encodeURIComponent(singleQueryStats.worst.framework)}&expandTaskId=${singleQueryStats.worst.task_id || singleQueryStats.worst.upload_id}`;
                                         window.open(url, '_blank');
-                                    }}>View Log &gt;</div>
+                                    }}>查看 &gt;</div>
                                 </div>
                             </div>
                         ) : (
@@ -2086,11 +2086,11 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>时间</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>框架</th>
-                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}>问题</th>
+                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}>用户输入</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>时延 <CustomTooltip content="从请求发出到收到最终完整回复的总耗时" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Token <CustomTooltip content="输入 Prompt 与输出 Completion 的 Token 总和" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>准确率 <CustomTooltip content={<div>基于LLM评估Agent真实运行结果与期望答案的差异，给出0-1分值，1表示完全正确。<br />"--"表示评估失败，可能是由于模型未配置（请在首页左上角的设置中配置 LLM）或者数据项未配置。</div>} /></span></th>
-                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>Est. Cost <CustomTooltip content="Estimated from default or custom (custom-models.json) pricing." /></span></th>
+                                    <th className="p-2" style={{ whiteSpace: 'nowrap' }}><span>预估花费 <CustomTooltip content="根据默认定价或自定义（custom-models.json）定价估算得出" /></span></th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>模型</th>
 
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>标签</th>
