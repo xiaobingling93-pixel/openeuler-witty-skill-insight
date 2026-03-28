@@ -19,7 +19,6 @@ const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.Res
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false });
 
-// --- Types Reuse ---
 interface SkillIssue {
     id: string;
     type: 'root_cause' | 'key_action';
@@ -166,7 +165,6 @@ const CustomTooltip = ({ content }: { content: string }) => {
                     lineHeight: '1.4'
                 }}>
                     {content}
-                    {/* Arrow */}
                     <div style={{
                         position: 'absolute',
                         top: '100%',
@@ -344,19 +342,16 @@ const RenderInteractionList = ({
 }) => {
     if (!interactions || !Array.isArray(interactions) || interactions.length === 0) return null;
 
-    // Sort state
     const [sortMode, setSortMode] = useState<'default' | 'latency_desc' | 'tokens_desc'>('default');
+    const [isExpanded, setIsExpanded] = useState(true);
 
-    // Pagination state
     const [currentPage, setCurrentPage] = useState(0);
     const pageSize = 5;
 
-    // Normalize interactions for different frameworks
     const normalizedInteractions = useMemo(() => {
         return normalizeInteractions(interactions);
     }, [interactions]);
 
-    // Prepare data with calculated metrics
     const processedInteractions = useMemo(() => {
         const rows: any[] = [];
 
@@ -377,7 +372,6 @@ const RenderInteractionList = ({
         };
 
         normalizedInteractions.forEach((item, index) => {
-            // LLM 调用行
             let lat = item.latency || 0;
             if (!lat && item.timeInfo && item.timeInfo.completed && item.timeInfo.created) {
                 lat = item.timeInfo.completed - item.timeInfo.created;
@@ -403,7 +397,6 @@ const RenderInteractionList = ({
                 tokens: tok
             });
 
-            // 工具调用行（与 LLM 同级展示）
             const toolCalls = item.tool_calls || item.toolCalls || [];
             if (Array.isArray(toolCalls) && toolCalls.length > 0) {
                 toolCalls.forEach((tc: any, tIdx: number) => {
@@ -436,24 +429,20 @@ const RenderInteractionList = ({
         return rows;
     }, [interactions]);
 
-    // Calculate Top 5 Latency rows (LLM only)
     const topLatencyIndices = useMemo(() => {
         const llmOnly = processedInteractions.filter(x => x.kind === 'llm');
         const sorted = [...llmOnly].sort((a, b) => b.latency - a.latency);
         return new Set(sorted.slice(0, 5).filter(x => x.latency > 0).map(x => x.id));
     }, [processedInteractions]);
 
-    // Calculate Top 5 Token Indices (LLM only)
     const topTokenIndices = useMemo(() => {
         const llmOnly = processedInteractions.filter(x => x.kind === 'llm');
         const sorted = [...llmOnly].sort((a, b) => b.tokens - a.tokens);
         return new Set(sorted.slice(0, 5).filter(x => x.tokens > 0).map(x => x.id));
     }, [processedInteractions]);
 
-    // Extract main steps (LLM only)
     const mainSteps = processedInteractions.filter(x => x.kind === 'llm');
 
-    // Apply sorting for main steps only
     const sortedMainSteps = useMemo(() => {
         const data = [...mainSteps];
         if (sortMode === 'latency_desc') {
@@ -466,14 +455,12 @@ const RenderInteractionList = ({
         return data;
     }, [mainSteps, sortMode]);
 
-    // Pagination Logic based on main steps count
     const totalPages = Math.ceil(sortedMainSteps.length / pageSize);
     const paginatedMainSteps = useMemo(() => {
         const start = currentPage * pageSize;
         return sortedMainSteps.slice(start, start + pageSize);
     }, [sortedMainSteps, currentPage, pageSize]);
 
-    // Attach tool steps to their parent main steps
     const paginatedInteractions = useMemo(() => {
         const result: any[] = [];
         paginatedMainSteps.forEach(mainStep => {
@@ -484,7 +471,6 @@ const RenderInteractionList = ({
         return result;
     }, [paginatedMainSteps, processedInteractions]);
 
-    // Reset page when sort mode changes
     useEffect(() => {
         setCurrentPage(0);
     }, [sortMode]);
@@ -506,7 +492,15 @@ const RenderInteractionList = ({
                 paddingBottom: '4px',
                 minHeight: '34px'
             }}>
-                <h4 style={headerStyle}>Execution Steps (Trace)</h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                    >
+                        {isExpanded ? '▼' : '▶'}
+                    </button>
+                    <h4 style={headerStyle}>执行步骤（Trace）</h4>
+                </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Sort by:</span>
                     <select
@@ -522,191 +516,192 @@ const RenderInteractionList = ({
                             outline: 'none'
                         }}
                     >
-                        <option value="default">Default (Chronological)</option>
-                        <option value="latency_desc">Latency (High to Low)</option>
-                        <option value="tokens_desc">Tokens (High to Low)</option>
+                        <option value="default">执行顺序</option>
+                        <option value="latency_desc">时延</option>
+                        <option value="tokens_desc">Tokens</option>
                     </select>
                 </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {paginatedInteractions.map((wrapper) => {
-                    const { original, kind, parentIndex, toolIndex, latency: latencyVal, tokens } = wrapper;
-                    const isTopLatency = topLatencyIndices.has(wrapper.id);
-                    const isTopToken = topTokenIndices.has(wrapper.id);
-                    const isFocused = focusedStep === parentIndex;
-                    const isTool = kind === 'tool';
+            {isExpanded && (
+                <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {paginatedInteractions.map((wrapper) => {
+                            const { original, kind, parentIndex, toolIndex, latency: latencyVal, tokens } = wrapper;
+                            const isTopLatency = topLatencyIndices.has(wrapper.id);
+                            const isTopToken = topTokenIndices.has(wrapper.id);
+                            const isFocused = focusedStep === parentIndex;
+                            const isTool = kind === 'tool';
 
-                    const latencyStr = latencyVal < 1000 ? `${latencyVal.toFixed(0)}ms` : `${(latencyVal / 1000).toFixed(2)}s`;
+                            const latencyStr = latencyVal < 1000 ? `${latencyVal.toFixed(0)}ms` : `${(latencyVal / 1000).toFixed(2)}s`;
 
-                    let role = 'unknown';
-                    let contentSummary = '';
+                            let role = 'unknown';
+                            let contentSummary = '';
 
-                    if (kind === 'tool') {
-                        const tc = original;
-                        role = `tool:${tc.function?.name || tc.name || 'unknown'}`;
-                        const out = tc.output ?? (tc.state && tc.state.output);
-                        if (typeof out === 'string') contentSummary = out;
-                        else if (out != null) contentSummary = JSON.stringify(out);
-                        else contentSummary = '';
-                    } else {
-                        const step = original;
-                        if (step.responseMessage) {
-                            role = step.responseMessage.role || 'assistant';
-                            const content = step.responseMessage.content;
-                            if (typeof content === 'string') contentSummary = content;
-                            else if (content) contentSummary = JSON.stringify(content);
-                        }
-                        if (!contentSummary && step.content) {
-                            const content = step.content;
-                            if (typeof content === 'string') contentSummary = content;
-                            else contentSummary = JSON.stringify(content);
-                        }
-                        if (step.role && role === 'unknown') {
-                            role = step.role;
-                        }
-                    }
+                            if (kind === 'tool') {
+                                const tc = original;
+                                role = `tool:${tc.function?.name || tc.name || 'unknown'}`;
+                                const out = tc.output ?? (tc.state && tc.state.output);
+                                if (typeof out === 'string') contentSummary = out;
+                                else if (out != null) contentSummary = JSON.stringify(out);
+                                else contentSummary = '';
+                            } else {
+                                const step = original;
+                                if (step.responseMessage) {
+                                    role = step.responseMessage.role || 'assistant';
+                                    const content = step.responseMessage.content;
+                                    if (typeof content === 'string') contentSummary = content;
+                                    else if (content) contentSummary = JSON.stringify(content);
+                                }
+                                if (!contentSummary && step.content) {
+                                    const content = step.content;
+                                    if (typeof content === 'string') contentSummary = content;
+                                    else contentSummary = JSON.stringify(content);
+                                }
+                                if (step.role && role === 'unknown') {
+                                    role = step.role;
+                                }
+                            }
 
-                    const roleColor =
-                        isTool ? '#fbbf24' :
-                            role === 'user' ? '#a78bfa' :
-                                role === 'assistant' ? '#38bdf8' :
-                                    role === 'opencode' ? '#ef4444' :
-                                        role === 'subagent' ? '#22c55e' :
-                                            '#e2e8f0';
+                            const roleColor =
+                                isTool ? '#fbbf24' :
+                                    role === 'user' ? '#a78bfa' :
+                                        role === 'assistant' ? '#38bdf8' :
+                                            role === 'opencode' ? '#ef4444' :
+                                                role === 'subagent' ? '#22c55e' :
+                                                    '#e2e8f0';
 
-                    const toolAccentColor = isTopLatency ? '#fb923c' : '#fbbf24';
-                    const focusShadow = '0 0 0 2px rgba(96, 165, 250, 0.3)';
-                    const toolAccentShadow = `inset 3px 0 0 ${toolAccentColor}`;
-                    const combinedShadow = isTool
-                        ? (isFocused ? `${focusShadow}, ${toolAccentShadow}` : toolAccentShadow)
-                        : (isFocused ? focusShadow : 'none');
+                            const toolAccentColor = isTopLatency ? '#fb923c' : '#fbbf24';
+                            const focusShadow = '0 0 0 2px rgba(96, 165, 250, 0.3)';
+                            const toolAccentShadow = `inset 3px 0 0 ${toolAccentColor}`;
+                            const combinedShadow = isTool
+                                ? (isFocused ? `${focusShadow}, ${toolAccentShadow}` : toolAccentShadow)
+                                : (isFocused ? focusShadow : 'none');
 
-                    // Truncate
-                    if (contentSummary.length > 150) contentSummary = contentSummary.slice(0, 150) + '...';
+                            if (contentSummary.length > 150) contentSummary = contentSummary.slice(0, 150) + '...';
 
-                    return (
-                        <div
-                            key={wrapper.id}
-                            onClick={() => onStepClick(parentIndex)}
-                            style={{
-                                background: isFocused
-                                    ? (isTool ? '#3730a3' : '#1e3a8a')
-                                    : (isTool ? '#111827' : '#1e293b'),
-                                border: isFocused ? '1px solid #60a5fa' : (isTool ? '1px solid #374151' : '1px solid #334155'),
-                                borderRadius: '6px',
-                                padding: '0.75rem',
-                                paddingLeft: isTool ? '1.25rem' : '0.75rem',
-                                marginLeft: isTool ? '16px' : 0,
-                                fontSize: '0.9rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                boxShadow: combinedShadow
-                            }}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{
-                                        background: '#334155', color: '#94a3b8',
-                                        padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                            return (
+                                <div
+                                    key={wrapper.id}
+                                    onClick={() => onStepClick(parentIndex)}
+                                    style={{
+                                        background: isFocused
+                                            ? (isTool ? '#3730a3' : '#1e3a8a')
+                                            : (isTool ? '#111827' : '#1e293b'),
+                                        border: isFocused ? '1px solid #60a5fa' : (isTool ? '1px solid #374151' : '1px solid #334155'),
+                                        borderRadius: '6px',
+                                        padding: '0.75rem',
+                                        paddingLeft: isTool ? '1.25rem' : '0.75rem',
+                                        marginLeft: isTool ? '16px' : 0,
+                                        fontSize: '0.9rem',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        boxShadow: combinedShadow
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{
+                                                background: '#334155', color: '#94a3b8',
+                                                padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                                            }}>
+                                                {kind === 'tool' ? `#${parentIndex}.${toolIndex}` : `#${parentIndex}`}
+                                            </span>
+                                            <span style={{ fontWeight: 'bold', color: roleColor, textTransform: 'capitalize' }}>
+                                                {role}
+                                            </span>
+                                            {isTool && (
+                                                <span style={{
+                                                    fontSize: '0.7rem',
+                                                    color: '#0f172a',
+                                                    background: '#fbbf24',
+                                                    borderRadius: '999px',
+                                                    padding: '1px 8px',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    TOOL
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{ color: '#94a3b8' }}>Latency:</span>
+                                                <span style={{
+                                                    color: isTopLatency ? '#fb923c' : '#cbd5e1',
+                                                    fontWeight: isTopLatency ? 'bold' : 'normal',
+                                                    borderBottom: isTopLatency ? '1px dashed #fb923c' : 'none'
+                                                }}>
+                                                    {latencyStr}
+                                                </span>
+                                                {isTopLatency && <span style={{ fontSize: '0.7rem', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '4px', padding: '0 4px' }}>TOP 5</span>}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{ color: '#94a3b8' }}>Tokens:</span>
+                                                <span style={{
+                                                    color: isTopToken ? '#f472b6' : '#cbd5e1',
+                                                    fontWeight: isTopToken ? 'bold' : 'normal',
+                                                    borderBottom: isTopToken ? '1px dashed #f472b6' : 'none'
+                                                }}>
+                                                    {tokens}
+                                                </span>
+                                                {isTopToken && <span style={{ fontSize: '0.7rem', color: '#f472b6', border: '1px solid #f472b6', borderRadius: '4px', padding: '0 4px' }}>TOP 5</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        color: '#cbd5e1',
+                                        fontFamily: 'monospace',
+                                        opacity: 0.9,
+                                        wordBreak: 'break-all'
                                     }}>
-                                        {kind === 'tool' ? `#${parentIndex}.${toolIndex}` : `#${parentIndex}`}
-                                    </span>
-                                    <span style={{ fontWeight: 'bold', color: roleColor, textTransform: 'capitalize' }}>
-                                        {role}
-                                    </span>
-                                    {isTool && (
-                                        <span style={{
-                                            fontSize: '0.7rem',
-                                            color: '#0f172a',
-                                            background: '#fbbf24',
-                                            borderRadius: '999px',
-                                            padding: '1px 8px',
-                                            fontWeight: 'bold'
-                                        }}>
-                                            TOOL
-                                        </span>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ color: '#94a3b8' }}>Latency:</span>
-                                        <span style={{
-                                            color: isTopLatency ? '#fb923c' : '#cbd5e1',
-                                            fontWeight: isTopLatency ? 'bold' : 'normal',
-                                            borderBottom: isTopLatency ? '1px dashed #fb923c' : 'none'
-                                        }}>
-                                            {latencyStr}
-                                        </span>
-                                        {isTopLatency && <span style={{ fontSize: '0.7rem', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '4px', padding: '0 4px' }}>TOP 5</span>}
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ color: '#94a3b8' }}>Tokens:</span>
-                                        <span style={{
-                                            color: isTopToken ? '#f472b6' : '#cbd5e1',
-                                            fontWeight: isTopToken ? 'bold' : 'normal',
-                                            borderBottom: isTopToken ? '1px dashed #f472b6' : 'none'
-                                        }}>
-                                            {tokens}
-                                        </span>
-                                        {isTopToken && <span style={{ fontSize: '0.7rem', color: '#f472b6', border: '1px solid #f472b6', borderRadius: '4px', padding: '0 4px' }}>TOP 5</span>}
+                                        {contentSummary || <span style={{ color: '#64748b', fontStyle: 'italic' }}>(No Content)</span>}
                                     </div>
                                 </div>
-                            </div>
-                            <div style={{
-                                color: '#cbd5e1',
-                                fontFamily: 'monospace',
-                                opacity: 0.9,
-                                wordBreak: 'break-all'
-                            }}>
-                                {contentSummary || <span style={{ color: '#64748b', fontStyle: 'italic' }}>(No Content)</span>}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+                            );
+                        })}
+                    </div>
 
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>
-                    <button
-                        onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-                        disabled={currentPage === 0}
-                        style={{
-                            padding: '4px 12px',
-                            background: currentPage === 0 ? '#334155' : '#38bdf8',
-                            color: currentPage === 0 ? '#94a3b8' : '#0f172a',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: currentPage === 0 ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        Prev
-                    </button>
-                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-                        Page {currentPage + 1} of {totalPages}
-                    </span>
-                    <button
-                        onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
-                        disabled={currentPage === totalPages - 1}
-                        style={{
-                            padding: '4px 12px',
-                            background: currentPage === totalPages - 1 ? '#334155' : '#38bdf8',
-                            color: currentPage === totalPages - 1 ? '#94a3b8' : '#0f172a',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: currentPage === totalPages - 1 ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        Next
-                    </button>
+                    {totalPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                                disabled={currentPage === 0}
+                                style={{
+                                    padding: '4px 12px',
+                                    background: currentPage === 0 ? '#334155' : '#38bdf8',
+                                    color: currentPage === 0 ? '#94a3b8' : '#0f172a',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: currentPage === 0 ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                Prev
+                            </button>
+                            <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                                Page {currentPage + 1} of {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                                disabled={currentPage === totalPages - 1}
+                                style={{
+                                    padding: '4px 12px',
+                                    background: currentPage === totalPages - 1 ? '#334155' : '#38bdf8',
+                                    color: currentPage === totalPages - 1 ? '#94a3b8' : '#0f172a',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: currentPage === totalPages - 1 ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 };
 
-// Ensure Suspense boundary for useSearchParams in Next.js App Router
 export default function DetailPageWrapper() {
     return (
         <Suspense fallback={<div className="p-8 text-white">Loading...</div>}>
@@ -727,7 +722,6 @@ function DetailPage() {
     const [allData, setAllData] = useState<Execution[]>([]);
     const [loading, setLoading] = useState(true);
     const [sessionData, setSessionData] = useState<Record<string, any>>({});
-    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(expandTaskId ? [expandTaskId] : []));
     const [timeFilter, setTimeFilter] = useState('all');
     const [editingQueryFor, setEditingQueryFor] = useState<string | null>(null);
     const [editQueryValue, setEditQueryValue] = useState('');
@@ -739,11 +733,16 @@ function DetailPage() {
 
     const [focusedStep, setFocusedStep] = useState<number | null>(null);
     const [showContextWindowChart, setShowContextWindowChart] = useState(false);
-    const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null);
     const [failureFilter, setFailureFilter] = useState<'all' | 'failure' | 'anomaly'>('all');
     const [failureSortBy, setFailureSortBy] = useState<'type' | 'time'>('type');
 
-    // Auto-fetch expanded session
+    const [currentRecord, setCurrentRecord] = useState<Execution | null>(null);
+
+    // 新增状态：控制模块的折叠/展开
+    const [isDetailsExpanded, setIsDetailsExpanded] = useState(true);
+    const [isSessionJsonExpanded, setIsSessionJsonExpanded] = useState(true);
+    const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
+
     useEffect(() => {
         if (expandTaskId && !sessionData[expandTaskId]) {
             fetch(`/api/session?taskId=${expandTaskId}`)
@@ -753,7 +752,6 @@ function DetailPage() {
         }
     }, [expandTaskId]);
 
-    // Fetch executions list
     useEffect(() => {
         let url = '/api/data?';
         const params = new URLSearchParams();
@@ -764,7 +762,6 @@ function DetailPage() {
         fetch(url + params.toString(), { cache: 'no-store' })
             .then(res => res.json())
             .then((data: any[]) => {
-                // Filter immediately by Query & Framework (data is mostly pre-filtered by backend now)
                 let targetQuery = query;
                 let targetFramework = framework;
 
@@ -773,6 +770,12 @@ function DetailPage() {
                     if (targetRecord) {
                         targetQuery = targetRecord.query;
                         if (!targetFramework) targetFramework = targetRecord.framework;
+                        setCurrentRecord(targetRecord);
+                    }
+                } else if (expandTaskId) {
+                    const targetRecord = data.find(d => d.task_id === expandTaskId || d.upload_id === expandTaskId);
+                    if (targetRecord) {
+                        setCurrentRecord(targetRecord);
                     }
                 }
 
@@ -785,14 +788,12 @@ function DetailPage() {
                     latency: Number(x.latency || 0),
                     answer_score: x.answer_score !== undefined ? Number(x.answer_score) : (x.is_answer_correct ? 1.0 : 0.0)
                 }));
-                // Sort by time ascending for charts
                 filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
                 setAllData(filtered);
                 setLoading(false);
             });
     }, [query, framework, expandTaskId, user]);
 
-    // Derived Data with Time Filter & Label Filter & Model Filter
     const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
     const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
     const [isLabelMenuOpen, setIsLabelMenuOpen] = useState(false);
@@ -838,7 +839,6 @@ function DetailPage() {
     const filteredData = useMemo(() => {
         let data = allData;
 
-        // Time Filter
         if (timeFilter !== 'all') {
             const now = Date.now();
             const map = {
@@ -851,7 +851,6 @@ function DetailPage() {
             data = data.filter(d => new Date(d.timestamp).getTime() > thresh);
         }
 
-        // Label Filter
         if (selectedLabels.size > 0) {
             data = data.filter(d => {
                 if (d.label) {
@@ -861,7 +860,6 @@ function DetailPage() {
             });
         }
 
-        // Model Filter
         if (selectedModels.size > 0) {
             data = data.filter(d => {
                 if (d.model) {
@@ -874,7 +872,6 @@ function DetailPage() {
         return data;
     }, [allData, timeFilter, selectedLabels, selectedModels]);
 
-    // Calculate statistics based on comparison dimension
     const compareDimData = useMemo(() => {
         const key = comparisonDim === 'label' ? 'label' : 'model';
         const items = [...new Set(filteredData.map(d => d[key]).filter(v => v))];
@@ -922,10 +919,8 @@ function DetailPage() {
 
         const skillRecallRateData = items.map(item => {
             const records = filteredData.filter(d => d[key] === item);
-            // Filter to only records with skill recall rate (i.e., records with expected skills)
             const recordsWithRecallRate = records.filter(r => r.skill_recall_rate !== null && r.skill_recall_rate !== undefined);
             const totalCount = recordsWithRecallRate.length;
-            // Calculate average skill recall rate from individual record rates
             const totalRecallRate = recordsWithRecallRate.reduce((sum, r) => sum + (r.skill_recall_rate || 0), 0);
             const avgSkillRecallRate = totalCount > 0 ? (totalRecallRate / totalCount) : 0;
             return {
@@ -953,32 +948,31 @@ function DetailPage() {
             contextWindow: ctxWindowData
         };
     }, [filteredData, comparisonDim]);
-    
-    // CPSR Trend Data Calculation
+
     const cpsrTrendData = useMemo(() => {
         if (filteredData.length === 0) return [];
-        
-        const sortedData = [...filteredData].sort((a, b) => 
+
+        const sortedData = [...filteredData].sort((a, b) =>
             new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
-        
+
         const dataWithCost = sortedData.filter(d => d.cost != null);
         if (dataWithCost.length === 0) return [];
-        
+
         const result: { timestamp: string; cpsr: number | null; avgCost: number; successRate: number; totalRuns: number }[] = [];
-        
+
         let cumulativeCost = 0;
         let cumulativeSuccesses = 0;
-        
+
         dataWithCost.forEach((d, idx) => {
             cumulativeCost += d.cost || 0;
             if (d.is_answer_correct) cumulativeSuccesses++;
-            
+
             const totalRuns = idx + 1;
             const avgCost = cumulativeCost / totalRuns;
             const successRate = cumulativeSuccesses / totalRuns;
             const cpsr = successRate > 0 ? avgCost / successRate : null;
-            
+
             if (cpsr !== null) {
                 result.push({
                     timestamp: d.timestamp,
@@ -989,11 +983,10 @@ function DetailPage() {
                 });
             }
         });
-        
+
         return result;
     }, [filteredData]);
 
-    // Toggle Expand
     const startEditQuery = (taskId: string, currentQuery: string) => {
         setEditingQueryFor(taskId);
         setEditQueryValue(currentQuery || '');
@@ -1033,7 +1026,6 @@ function DetailPage() {
             setQuerySaveStatus({ id: taskId, status: 'ok', msg });
             setEditingQueryFor(null);
             setEditQueryValue('');
-            // 若修改后的 query 与当前页不同，跳转到新 query 的详情页以便用户继续查看该记录
             if (val !== query) {
                 const params = new URLSearchParams();
                 params.set('query', val);
@@ -1041,7 +1033,6 @@ function DetailPage() {
                 params.set('expandTaskId', taskId);
                 router.push(`/details?${params.toString()}`);
             } else {
-                // Refresh data
                 const refreshUrl = user ? `/api/data?user=${encodeURIComponent(user)}` : '/api/data';
                 const dataRes = await fetch(refreshUrl);
                 const data: any[] = await dataRes.json();
@@ -1138,31 +1129,6 @@ function DetailPage() {
         }
     };
 
-
-    const toggleExpand = async (taskId: string) => {
-        const newSet = new Set(expandedIds);
-        if (newSet.has(taskId)) {
-            newSet.delete(taskId);
-        } else {
-            newSet.add(taskId);
-            // Fetch session if not present
-            if (!sessionData[taskId]) {
-                try {
-                    const res = await fetch(`/api/session?taskId=${taskId}`);
-                    if (res.ok) {
-                        const json = await res.json();
-                        setSessionData(prev => ({ ...prev, [taskId]: json }));
-                    } else {
-                        setSessionData(prev => ({ ...prev, [taskId]: { error: 'No session log found' } }));
-                    }
-                } catch (e) {
-                    setSessionData(prev => ({ ...prev, [taskId]: { error: 'Fetch error' } }));
-                }
-            }
-        }
-        setExpandedIds(newSet);
-    };
-
     const formatTime = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const formatFullTime = (ts: string) => {
         if (!ts) return '-';
@@ -1190,11 +1156,11 @@ function DetailPage() {
     const formatSessionForDisplay = (session: any): any => {
         if (!session) return session;
         const formatted = JSON.parse(JSON.stringify(session));
-        
+
         if (formatted.startTime) {
             formatted.startTime = formatTimestampForDisplay(formatted.startTime);
         }
-        
+
         if (Array.isArray(formatted.interactions)) {
             formatted.interactions = formatted.interactions.map((interaction: any) => {
                 const formattedInteraction = { ...interaction };
@@ -1210,43 +1176,37 @@ function DetailPage() {
                 return formattedInteraction;
             });
         }
-        
+
         return formatted;
     };
 
     const handleExportHtml = () => {
         const clone = document.documentElement.cloneNode(true) as HTMLElement;
 
-        // Cleanup
         clone.querySelectorAll('script').forEach(s => s.remove());
         clone.querySelectorAll('.export-btn').forEach(b => b.remove());
 
-        // Revival Script
         const revivalScript = `
         <script>
             (function() {
-                // Constants
                 const TS_MAP = {
                     '1h': 60 * 60 * 1000,
                     '12h': 12 * 60 * 60 * 1000,
                     '24h': 24 * 60 * 60 * 1000,
                     'all': 0
                 };
-                
-                // State
+
                 let state = {
-                    timeFilter: 'all', // '1h', '12h', '24h', 'all'
+                    timeFilter: 'all',
                     selectedLabels: new Set()
                 };
 
-                // Elements
                 const rows = document.querySelectorAll('.record-row');
                 const totalCountEl = document.getElementById('total-records-count');
                 const labelMenu = document.getElementById('label-menu-dropdown');
                 const labelTrigger = document.getElementById('label-menu-trigger');
                 const labelTextObj = document.getElementById('label-trigger-text');
-                
-                // --- Logic ---
+
                 function updateVisibility() {
                     const now = Date.now();
                     const threshold = TS_MAP[state.timeFilter] ? now - TS_MAP[state.timeFilter] : 0;
@@ -1255,17 +1215,12 @@ function DetailPage() {
                     rows.forEach(row => {
                         const ts = parseInt(row.getAttribute('data-timestamp') || '0');
                         const lbl = row.getAttribute('data-label') || '';
-                        
+
                         let visible = true;
-                        
-                        // Time Check
+
                         if (threshold > 0 && ts < threshold) visible = false;
-                        
-                        // Label Check
+
                         if (visible && state.selectedLabels.size > 0) {
-                            // If filter explicitly has this label, show it.
-                            // Note: We need to handle 'No Label' case specially if needed, but for now simple match.
-                            // The row data-label might be empty string.
                             const checkLbl = lbl || '__no_label__';
                             if (!state.selectedLabels.has(checkLbl)) visible = false;
                         }
@@ -1277,53 +1232,44 @@ function DetailPage() {
                     if (totalCountEl) totalCountEl.innerText = count;
                 }
 
-                // --- Bindings ---
-                
-                // Time Filters
                 document.querySelectorAll('.filter-time-btn').forEach(btn => {
                     btn.onclick = () => {
-                        // Update UI
                         document.querySelectorAll('.filter-time-btn').forEach(b => {
                             b.style.background = '#1e293b';
                             b.style.color = '#94a3b8';
                         });
                         btn.style.background = '#38bdf8';
                         btn.style.color = '#0f172a';
-                        
+
                         state.timeFilter = btn.getAttribute('data-tf');
                         updateVisibility();
                     };
                 });
 
-                // Label Menu Toggle
                 if (labelTrigger && labelMenu) {
                     labelTrigger.onclick = (e) => {
                         e.stopPropagation();
                         labelMenu.style.display = labelMenu.style.display === 'none' ? 'block' : 'none';
                     };
-                    // Close on outside click
                     document.body.onclick = () => {
                          labelMenu.style.display = 'none';
                     };
                     labelMenu.onclick = (e) => e.stopPropagation();
                 }
 
-                // Label Checkboxes
                 document.querySelectorAll('.filter-label-checkbox').forEach(chk => {
                     chk.onchange = () => {
                         const val = chk.value;
                         if (chk.checked) state.selectedLabels.add(val);
                         else state.selectedLabels.delete(val);
-                        
-                        // Update Trigger Text
+
                         if (labelTextObj) {
                             labelTextObj.innerText = state.selectedLabels.size === 0 ? 'All Filter' : \`\${state.selectedLabels.size} Selected\`;
                         }
                         updateVisibility();
                     };
                 });
-                
-                // Clear Labels
+
                 const clearBtn = document.getElementById('filter-label-clear');
                 if (clearBtn) {
                     clearBtn.onclick = () => {
@@ -1335,21 +1281,6 @@ function DetailPage() {
                     }
                 }
 
-                // Expand/Collapse Rows
-                document.querySelectorAll('.record-summary').forEach(summary => {
-                    summary.onclick = () => {
-                        const detail = summary.nextElementSibling;
-                        if (detail && detail.classList.contains('record-detail')) {
-                            const isHidden = detail.style.display === 'none';
-                            detail.style.display = isHidden ? 'block' : 'none';
-                            // Update icon
-                            const icon = summary.querySelector('.expand-icon');
-                            if (icon) icon.innerText = isHidden ? '▲' : '▼';
-                        }
-                    };
-                });
-
-                // Home Link - navigate to main page
                 const homeLink = document.getElementById('home-link');
                 if (homeLink) {
                     homeLink.onclick = () => {
@@ -1359,7 +1290,6 @@ function DetailPage() {
                     homeLink.onmouseout = () => { homeLink.style.color = '#38bdf8'; };
                 }
 
-                // Charts Notice
                 console.log('Offline Mode: Charts are static snapshots.');
             })();
         </script>
@@ -1380,9 +1310,80 @@ function DetailPage() {
 
     if (loading) return <div style={{ padding: '2rem', color: 'white' }}>Loading...</div>;
 
-    if (allData.length === 0) {
-        return <div style={{ padding: '2rem', color: 'white' }}>No records found for this combination.</div>;
+    if (!expandTaskId) {
+        return (
+            <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f8fafc', padding: '2rem' }}>
+                <div style={{
+                    maxWidth: '600px',
+                    margin: '4rem auto',
+                    textAlign: 'center',
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '3rem'
+                }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+                    <h2 style={{ color: '#fbbf24', marginBottom: '1rem' }}>缺少必要参数</h2>
+                    <p style={{ color: '#94a3b8', marginBottom: '1.5rem' }}>
+                        请通过 <code style={{ background: '#0f172a', padding: '2px 8px', borderRadius: '4px' }}>expandTaskId</code> 参数访问此页面
+                    </p>
+                    <button
+                        onClick={() => router.push('/')}
+                        style={{
+                            padding: '10px 24px',
+                            background: '#38bdf8',
+                            color: '#0f172a',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        返回首页
+                    </button>
+                </div>
+            </div>
+        );
     }
+
+    if (!currentRecord) {
+        return (
+            <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f8fafc', padding: '2rem' }}>
+                <div style={{
+                    maxWidth: '600px',
+                    margin: '4rem auto',
+                    textAlign: 'center',
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '3rem'
+                }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔍</div>
+                    <h2 style={{ color: '#f87171', marginBottom: '1rem' }}>未找到记录</h2>
+                    <p style={{ color: '#94a3b8', marginBottom: '1.5rem' }}>
+                        未找到 ID 为 <code style={{ background: '#0f172a', padding: '2px 8px', borderRadius: '4px' }}>{expandTaskId}</code> 的记录
+                    </p>
+                    <button
+                        onClick={() => router.push('/')}
+                        style={{
+                            padding: '10px 24px',
+                            background: '#38bdf8',
+                            color: '#0f172a',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        返回首页
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    const taskId = currentRecord.task_id || currentRecord.upload_id || `temp-${currentRecord.timestamp}`;
+    const session = sessionData[taskId];
 
     return (
         <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f8fafc', padding: '2rem' }}>
@@ -1431,10 +1432,711 @@ function DetailPage() {
                 </button>
             </div>
             <div style={{ marginBottom: '2rem', color: '#94a3b8' }}>
-                Framework: <strong style={{ color: 'white' }}>{framework || 'All'}</strong> | Total Records: <span id="total-records-count">{filteredData.length}</span>
+                框架: <strong style={{ color: 'white' }}>{framework || 'All'}</strong> | 任务 ID: <strong style={{ color: 'white' }}>{taskId}</strong>
             </div>
 
-            {/* Controls */}
+            {/* 本次执行记录详情 */}
+            <div style={{
+                background: 'linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%)',
+                border: '2px solid #38bdf8',
+                borderRadius: '12px',
+                padding: '2rem',
+                marginBottom: '2rem',
+                boxShadow: '0 0 20px rgba(56, 189, 248, 0.2)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isDetailsExpanded ? '1.5rem' : '0' }}>
+                    <h2 style={{
+                        fontSize: '1.5rem',
+                        margin: 0,
+                        color: '#38bdf8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}>
+                        📋 本次执行记录详情
+                        <span style={{
+                            fontSize: '0.85rem',
+                            background: '#38bdf8',
+                            color: '#0f172a',
+                            padding: '2px 12px',
+                            borderRadius: '999px',
+                            fontWeight: 'bold'
+                        }}>
+                            {formatFullTime(currentRecord.timestamp)}
+                        </span>
+                    </h2>
+                    <button
+                        onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
+                        style={{
+                            background: 'transparent', border: '1px solid #38bdf8', color: '#38bdf8',
+                            padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem'
+                        }}
+                    >
+                        {isDetailsExpanded ? '▼ 折叠' : '▶ 展开'}
+                    </button>
+                </div>
+
+                {isDetailsExpanded && (
+                    <>
+                        {/* 上层区域：原始采集数据 */}
+                        <div style={{
+                            background: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '8px',
+                            padding: '1.5rem',
+                            marginBottom: '1.5rem'
+                        }}>
+                            <h3 style={{
+                                fontSize: '1.2rem',
+                                marginBottom: '1rem',
+                                color: '#fbbf24',
+                                borderBottom: '1px solid #334155',
+                                paddingBottom: '0.5rem'
+                            }}>
+                                📊 原始采集数据
+                            </h3>
+
+                            {/* 使用 Grid 布局：左列 (Query/Skills/Metrics) 和 右列 (Final Result) */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem', minHeight: '400px' }}>
+
+                                {/* 左侧单列：Query、Skills Used、Runtime Metrics */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+                                    {/* 1. Query */}
+                                    <div>
+                                        <h4 style={sectionHeader}>用户输入</h4>
+                                        {editingQueryFor === taskId ? (
+                                            <div>
+                                                <textarea
+                                                    value={editQueryValue}
+                                                    onChange={(e) => setEditQueryValue(e.target.value)}
+                                                    rows={3}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.75rem',
+                                                        background: '#1e293b',
+                                                        border: '1px solid #334155',
+                                                        borderRadius: '6px',
+                                                        color: '#e2e8f0',
+                                                        fontFamily: 'monospace',
+                                                        fontSize: '0.9rem',
+                                                        resize: 'vertical'
+                                                    }}
+                                                    placeholder="输入 query"
+                                                />
+                                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                                                    <button
+                                                        onClick={() => saveQuery(taskId, currentRecord.upload_id)}
+                                                        disabled={querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving'}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            background: '#38bdf8',
+                                                            color: '#0f172a',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            cursor: querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving' ? 'not-allowed' : 'pointer',
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        {querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving' ? '保存中...' : '保存'}
+                                                    </button>
+                                                    <button
+                                                        onClick={cancelEditQuery}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            background: '#334155',
+                                                            color: '#94a3b8',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        取消
+                                                    </button>
+                                                    {querySaveStatus?.id === taskId && querySaveStatus?.status === 'ok' && (
+                                                        <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>{querySaveStatus.msg}</span>
+                                                    )}
+                                                    {querySaveStatus?.id === taskId && querySaveStatus?.status === 'error' && (
+                                                        <span style={{ color: '#f87171', fontSize: '0.9rem' }}>{querySaveStatus.msg}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                                <div style={codeBlock}>{currentRecord.query || '(空)'}</div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); startEditQuery(taskId, currentRecord.query || ''); }}
+                                                    style={{
+                                                        padding: '4px 10px',
+                                                        background: 'transparent',
+                                                        color: '#38bdf8',
+                                                        border: '1px solid #38bdf8',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        fontSize: '0.8rem',
+                                                        whiteSpace: 'nowrap'
+                                                    }}
+                                                >
+                                                    ✏️ 编辑
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 2. Skills Used */}
+                                    <div>
+                                        <h4 style={sectionHeader}>使用 Skills</h4>
+                                        <div style={{ ...codeBlock, padding: '0.5rem', background: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
+                                            <SkillLinks
+                                                skills={currentRecord.skills}
+                                                skill={currentRecord.skill}
+                                                skillVersion={currentRecord.skill_version}
+                                                user={currentRecord.user}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* 3. Runtime Metrics */}
+                                    {(currentRecord.llm_call_count != null || currentRecord.tool_call_count != null || currentRecord.input_tokens != null || currentRecord.output_tokens != null || currentRecord.tool_call_error_count != null) && (
+                                        <div>
+                                            <h4 style={sectionHeader}>运行时指标</h4>
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                                                gap: '0.75rem',
+                                                marginTop: '0.5rem'
+                                            }}>
+                                                {[
+                                                    { label: '大模型调用次数', value: currentRecord.llm_call_count, color: '#38bdf8' },
+                                                    { label: '工具调用次数', value: currentRecord.tool_call_count, color: '#38bdf8' },
+                                                    { label: '工具报错次数', value: currentRecord.tool_call_error_count ?? 0, color: currentRecord.tool_call_error_count ? '#f87171' : '#4ade80' },
+                                                    { label: '输入 Tokens', value: currentRecord.input_tokens, color: '#38bdf8' },
+                                                    { label: '输出 Tokens', value: currentRecord.output_tokens, color: '#38bdf8' },
+                                                    {
+                                                        label: '上下文窗口 %',
+                                                        value: currentRecord.context_window_pct,
+                                                        color: currentRecord.context_window_pct != null ? (currentRecord.context_window_pct > 90 ? '#f87171' : '#4ade80') : '#38bdf8',
+                                                        format: (v: number) => `${v.toFixed(1)}%`,
+                                                        fallback: (currentRecord.context_window_pct == null && currentRecord.max_single_call_tokens != null) ? 'N/A' : undefined,
+                                                        tooltip: currentRecord.context_window_pct != null
+                                                            ? `max_single_call_tokens (${currentRecord.max_single_call_tokens?.toLocaleString()}) / context_window_limit (${currentRecord.context_window_limit?.toLocaleString()}) × 100` + (currentRecord.model ? ` (${currentRecord.model})` : '') + `. Source: ${currentRecord.context_window_source || 'default'}.`
+                                                            : currentRecord.model
+                                                                ? `此模型未配置: ${currentRecord.model}.`
+                                                                : 'Model unknown. Context window % cannot be calculated.'
+                                                    },
+                                                    {
+                                                        label: '预估成本',
+                                                        value: currentRecord.cost,
+                                                        color: '#38bdf8',
+                                                        format: (v: number) => `$${v === 0 ? '0.00' : v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(3) : v.toFixed(2)}`,
+                                                        fallback: (currentRecord.cost == null && currentRecord.input_tokens != null) ? 'N/A' : undefined,
+                                                        tooltip: currentRecord.cost_pricing
+                                                            ? (currentRecord.cache_read_input_tokens || currentRecord.cache_creation_input_tokens
+                                                                ? `Cost = base_input × $${currentRecord.cost_pricing.inputTokenPrice}/M + cache_read × $${currentRecord.cost_pricing.cacheReadInputTokenPrice}/M + cache_create × $${currentRecord.cost_pricing.cacheCreationInputTokenPrice}/M + output × $${currentRecord.cost_pricing.outputTokenPrice}/M`
+                                                                : `Cost = input_tokens × $${currentRecord.cost_pricing.inputTokenPrice}/M + output_tokens × $${currentRecord.cost_pricing.outputTokenPrice}/M`)
+                                                                + (currentRecord.model ? ` (${currentRecord.model})` : '') + `. Estimated from ${currentRecord.cost_pricing.source === 'custom' ? 'custom' : 'default'} pricing.`
+                                                            : currentRecord.model
+                                                                ? `Pricing not available for model: ${currentRecord.model}.`
+                                                                : 'Model unknown. Cost cannot be estimated.'
+                                                    },
+                                                ].map((metric, idx) => (
+                                                    <div key={idx} style={{
+                                                        background: '#1e293b',
+                                                        border: '1px solid #334155',
+                                                        borderRadius: '6px',
+                                                        padding: '0.75rem',
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        <div style={{
+                                                            fontSize: '1.3rem',
+                                                            fontWeight: 'bold',
+                                                            color: metric.color
+                                                        }}>
+                                                            {metric.value != null ? ('format' in metric && metric.format ? metric.format(metric.value) : metric.value.toLocaleString()) : ('fallback' in metric && metric.fallback ? metric.fallback : '-')}
+                                                        </div>
+                                                        <div style={{
+                                                            fontSize: '0.75rem',
+                                                            color: '#64748b',
+                                                            marginTop: '4px'
+                                                        }}>
+                                                            {metric.label}
+                                                            {'tooltip' in metric && metric.tooltip && <CustomTooltip content={metric.tooltip} />}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 右侧单列：Final Result (高度跟随左侧，最少 400px，内部产生滚动) */}
+                                <div style={{ position: 'relative' }}>
+                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+                                        <h4 style={{ ...sectionHeader, marginBottom: '0.5rem' }}>最终结果</h4>
+
+                                        {editingResultFor === taskId ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                                                <textarea
+                                                    value={editResultValue}
+                                                    onChange={(e) => setEditResultValue(e.target.value)}
+                                                    style={{
+                                                        flex: 1, // 占满剩余高度
+                                                        width: '100%',
+                                                        padding: '0.75rem',
+                                                        background: '#1e293b',
+                                                        border: '1px solid #334155',
+                                                        borderRadius: '6px',
+                                                        color: '#e2e8f0',
+                                                        fontFamily: 'monospace',
+                                                        fontSize: '0.9rem',
+                                                        resize: 'none', // 禁用缩放，因为高度已固定
+                                                        marginBottom: '0.5rem'
+                                                    }}
+                                                    placeholder="输入或上传 最终结果"
+                                                />
+                                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+                                                    <button
+                                                        onClick={() => saveFinalResult(taskId, currentRecord.upload_id)}
+                                                        disabled={resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving'}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            background: '#38bdf8',
+                                                            color: '#0f172a',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            cursor: resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving' ? 'not-allowed' : 'pointer',
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving' ? '保存中...' : '保存并重评'}
+                                                    </button>
+                                                    <button
+                                                        onClick={cancelEditResult}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            background: '#334155',
+                                                            color: '#94a3b8',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        取消
+                                                    </button>
+                                                    <label style={{
+                                                        padding: '6px 14px',
+                                                        background: '#2d3748',
+                                                        color: '#fbbf24',
+                                                        border: '1px solid #fbbf24',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        fontSize: '0.85rem'
+                                                    }}>
+                                                        📄 上传报告
+                                                        <input
+                                                            type="file"
+                                                            accept=".md,.txt,.pdf,.markdown"
+                                                            style={{ display: 'none' }}
+                                                            onChange={handleUploadResult}
+                                                        />
+                                                    </label>
+
+                                                    {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'ok' && (
+                                                        <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>{resultSaveStatus.msg}</span>
+                                                    )}
+                                                    {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'error' && (
+                                                        <span style={{ color: '#f87171', fontSize: '0.9rem' }}>{resultSaveStatus.msg}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                                                <div style={{
+                                                    ...codeBlock,
+                                                    flex: 1, // 撑开中间，挤压操作按钮到底部
+                                                    overflowY: 'auto',
+                                                    padding: '1rem',
+                                                    background: '#1e293b',
+                                                    border: '1px solid #334155',
+                                                    borderRadius: '6px',
+                                                    wordBreak: 'break-word'
+                                                }}>
+                                                    {currentRecord.final_result || '(No Result)'}
+                                                </div>
+                                                <div style={{ marginTop: '0.5rem', flexShrink: 0 }}>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); startEditResult(taskId, currentRecord.final_result || ''); }}
+                                                        style={{
+                                                            padding: '4px 10px',
+                                                            background: 'transparent',
+                                                            color: '#38bdf8',
+                                                            border: '1px solid #38bdf8',
+                                                            borderRadius: '4px',
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px',
+                                                            fontSize: '0.8rem'
+                                                        }}
+                                                    >
+                                                        ✏️ 编辑 / 替换结果
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 5. Session Data & Execution Steps */}
+                            {session ? (
+                                session.error ? (
+                                    <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>{session.error}</div>
+                                ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'flex-start',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                marginBottom: '0.5rem',
+                                                borderBottom: '1px solid #334155',
+                                                paddingBottom: '4px',
+                                                minHeight: '34px'
+                                            }}>
+                                                <button
+                                                    onClick={() => setIsSessionJsonExpanded(!isSessionJsonExpanded)}
+                                                    style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                                                >
+                                                    {isSessionJsonExpanded ? '▼' : '▶'}
+                                                </button>
+                                                <h4 style={sectionHeader}>会话数据（原始JSON）</h4>
+                                            </div>
+                                            {isSessionJsonExpanded && (
+                                                <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '8px', overflowY: 'auto', maxHeight: '600px' }}>
+                                                    <ReactJson
+                                                        key={`json-${focusedStep !== null ? focusedStep : 'default'}`}
+                                                        src={formatSessionForDisplay(session)}
+                                                        theme="monokai"
+                                                        shouldCollapse={(field) => {
+                                                            const path = [...(field.namespace || []), field.name]
+                                                                .filter(key => key != null && String(key).trim() !== '')
+                                                                .map(String);
+                                                            if (focusedStep === null) {
+                                                                if (path[0] === 'interactions' && path.length >= 2) return true;
+                                                                return false;
+                                                            }
+
+                                                            if (path[0] === 'interactions') {
+                                                                const stepStr = path[1];
+
+                                                                if (stepStr !== undefined) {
+                                                                    const stepIndex = Number(stepStr);
+                                                                    if (!isNaN(stepIndex)) {
+                                                                        if (stepIndex !== focusedStep) {
+                                                                            return true;
+                                                                        }
+                                                                        return false;
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            return false;
+                                                        }}
+                                                        displayDataTypes={false}
+                                                        name={null}
+                                                        style={{ backgroundColor: 'transparent', fontSize: '0.85rem' }}
+                                                        enableClipboard={true}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                            <RenderInteractionList
+                                                interactions={session.interactions}
+                                                focusedStep={focusedStep}
+                                                onStepClick={setFocusedStep}
+                                            />
+                                        </div>
+                                    </div>
+                                )
+                            ) : (
+                                <div style={{ color: '#38bdf8' }}>Loading session log...</div>
+                            )}
+                        </div>
+
+                        {/* 下层区域：分析数据 */}
+                        <div style={{
+                            background: '#1a1f2e',
+                            border: '1px solid #475569',
+                            borderRadius: '8px',
+                            padding: '1.5rem',
+                            marginTop: '1.5rem'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isAnalysisExpanded ? '1rem' : '0', borderBottom: isAnalysisExpanded ? '1px solid #475569' : 'none', paddingBottom: isAnalysisExpanded ? '0.5rem' : '0' }}>
+                                <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#a78bfa' }}>
+                                    🔍 分析结果
+                                </h3>
+                                <button
+                                    onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                                    style={{
+                                        background: 'transparent', border: '1px solid #a78bfa', color: '#a78bfa',
+                                        padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem'
+                                    }}
+                                >
+                                    {isAnalysisExpanded ? '▼ 折叠' : '▶ 展开'}
+                                </button>
+                            </div>
+
+                            {isAnalysisExpanded && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginBottom: '2rem' }}>
+
+                                    {/* 1. 评分详情与分析 (原 Judgment Reason 与 Skill Analysis 合并) */}
+                                    <div>
+                                        <h4 style={{ ...sectionHeader, marginBottom: '1rem' }}>评分详情与分析</h4>
+                                        {(() => {
+                                            const evalItems = parseEvaluationItemsFromReason(currentRecord.judgment_reason || '');
+                                            if (evalItems.length === 0) {
+                                                return (
+                                                    <div style={{
+                                                        ...codeBlock,
+                                                        background: '#1e293b',
+                                                        padding: '1rem',
+                                                        borderRadius: '6px',
+                                                        border: '1px solid #334155'
+                                                    }}>
+                                                        {currentRecord.judgment_reason || '-'}
+                                                    </div>
+                                                );
+                                            }
+                                            return (
+                                                <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflowX: 'visible' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: '950px' }}>
+                                                        <thead>
+                                                            <tr style={{ background: '#0f172a' }}>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px', whiteSpace: 'nowrap' }}>ID</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', minWidth: '180px' }}>评分标准</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px', whiteSpace: 'nowrap' }}>得分</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px', whiteSpace: 'nowrap' }}>权重</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px', whiteSpace: 'nowrap' }}>扣分</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px', whiteSpace: 'nowrap' }}>关联<CustomTooltip content="表示扣分来源。若与skill相关，则体现在“分析依据”和“改进建议”" /></th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', minWidth: '150px' }}>扣分原因</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', minWidth: '150px' }}>分析依据</th>
+                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', minWidth: '150px' }}>改进建议</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {evalItems.map((evalItem, idx) => {
+                                                                // 增强匹配逻辑：不仅匹配 ID，如果 ID 对不上，尝试通过 content (评分标准) 内容匹配
+                                                                const relatedSkillIssue = currentRecord.skill_issues?.find(si => {
+                                                                    if (si.id === evalItem.id) return true;
+                                                                    const siContent = (si.content || '').trim().toLowerCase();
+                                                                    const evContent = (evalItem.content || '').trim().toLowerCase();
+                                                                    return siContent && evContent && (siContent === evContent || evContent.includes(siContent));
+                                                                });
+
+                                                                const deduction = (1 - evalItem.match_score) * evalItem.weight;
+
+                                                                return (
+                                                                    <tr
+                                                                        key={idx}
+                                                                        id={`eval-item-${taskId}-${evalItem.id}`}
+                                                                        style={{
+                                                                            background: idx % 2 === 0 ? '#1e293b' : '#1a2530',
+                                                                            transition: 'background 0.2s'
+                                                                        }}
+                                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)'; }}
+                                                                        onMouseLeave={(e) => { e.currentTarget.style.background = idx % 2 === 0 ? '#1e293b' : '#1a2530'; }}
+                                                                    >
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                background: evalItem.type === 'root_cause' ? '#f472b6' : '#38bdf8',
+                                                                                color: '#0f172a',
+                                                                                padding: '2px 8px',
+                                                                                borderRadius: '4px',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 'bold',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}>
+                                                                                {evalItem.id}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#e2e8f0' }}>
+                                                                            <div style={{ fontWeight: 500, marginBottom: '4px', wordBreak: 'break-word' }}>
+                                                                                {relatedSkillIssue?.content || evalItem.content}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                color: evalItem.match_score >= 1 ? '#4ade80' : evalItem.match_score >= 0.5 ? '#fbbf24' : '#f87171',
+                                                                                fontWeight: 'bold',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}>
+                                                                                {(evalItem.match_score * 100).toFixed(0)}%
+                                                                            </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center', color: '#94a3b8' }}>
+                                                                            {evalItem.weight.toFixed(1)}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                            <span style={{
+                                                                                color: deduction > 0 ? '#f87171' : '#4ade80',
+                                                                                fontWeight: 'bold',
+                                                                                whiteSpace: 'nowrap'
+                                                                            }}>
+                                                                                -{deduction.toFixed(2)}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                                                            {relatedSkillIssue && (
+                                                                                <span style={{
+                                                                                    background: '#ef4444',
+                                                                                    color: '#fff',
+                                                                                    padding: '2px 6px',
+                                                                                    borderRadius: '4px',
+                                                                                    fontSize: '0.7rem',
+                                                                                    whiteSpace: 'nowrap'
+                                                                                }}>
+                                                                                    Skill
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                                                            {relatedSkillIssue?.explanation || evalItem.explanation || '-'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#fcd34d', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                                                            {relatedSkillIssue?.reasoning || '-'}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#86efac', fontSize: '0.85rem' }}>
+                                                                            {relatedSkillIssue?.improvement_suggestion ? (
+                                                                                <div style={{ background: 'rgba(74, 222, 128, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>
+                                                                                    {relatedSkillIssue.improvement_suggestion}
+                                                                                </div>
+                                                                            ) : '-'}
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* 2. Failures Section */}
+                                    {currentRecord.failures && currentRecord.failures.length > 0 ? (
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                                <h4 style={{ ...sectionHeader, color: '#f87171', borderLeft: '3px solid #f87171', paddingLeft: '8px', borderBottom: 'none', margin: 0 }}> 执行异常 </h4>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <select
+                                                        value={failureFilter}
+                                                        onChange={(e) => setFailureFilter(e.target.value as 'all' | 'failure' | 'anomaly')}
+                                                        style={{
+                                                            background: '#0f172a',
+                                                            border: '1px solid #334155',
+                                                            color: '#94a3b8',
+                                                            borderRadius: '4px',
+                                                            padding: '4px 8px',
+                                                            fontSize: '0.8rem'
+                                                        }}
+                                                    >
+                                                        <option value="all">全部</option>
+                                                        <option value="failure">失败</option>
+                                                        <option value="anomaly">异常</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflow: 'hidden' }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                                    <thead>
+                                                        <tr style={{ background: '#0f172a' }}>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '100px' }}>类型</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: 'auto' }}>描述</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '500px' }}>恢复措施</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {currentRecord.failures
+                                                            .filter(fail => {
+                                                                if (failureFilter === 'all') return true;
+                                                                const type = fail.failure_type.toLowerCase();
+                                                                if (failureFilter === 'failure') return type.includes('fail') || type.includes('error');
+                                                                if (failureFilter === 'anomaly') return type.includes('anomaly') || type.includes('warn');
+                                                                return true;
+                                                            })
+                                                            .map((fail, idx) => (
+                                                            <tr key={idx} style={{ background: idx % 2 === 0 ? '#1e293b' : '#1a2530' }}>
+                                                                <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
+                                                                    <span style={{
+                                                                        background: fail.failure_type.toLowerCase().includes('error') || fail.failure_type.toLowerCase().includes('fail') ? '#f87171' : '#fbbf24',
+                                                                        color: '#0f172a',
+                                                                        padding: '2px 8px',
+                                                                        borderRadius: '4px',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 'bold'
+                                                                    }}>
+                                                                        {fail.failure_type}
+                                                                    </span>
+                                                                </td>
+                                                                <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
+                                                                    <div style={{ color: '#fca5a5', fontWeight: 500, marginBottom: '4px' }}>{fail.description}</div>
+                                                                    {fail.context && (
+                                                                        <div style={{
+                                                                            fontSize: '0.8rem',
+                                                                            color: '#94a3b8',
+                                                                            fontFamily: 'monospace',
+                                                                            background: 'rgba(0,0,0,0.3)',
+                                                                            padding: '6px 8px',
+                                                                            borderRadius: '4px',
+                                                                            marginTop: '4px',
+                                                                            whiteSpace: 'pre-wrap',
+                                                                            wordBreak: 'break-all'
+                                                                        }}>
+                                                                            {fail.context}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#86efac', fontSize: '0.8rem' }}>
+                                                                    {fail.recovery || '-'}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '1rem', border: '1px dashed #334155', borderRadius: '6px', color: '#64748b', textAlign: 'center', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                                            No intermediate failures detected.
+                                        </div>
+                                    )}
+
+                                    {/* Execution Flow Comparison */}
+                                    <ExecutionFlowComparison
+                                        executionId={taskId}
+                                        skillId={(currentRecord.skill && currentRecord.skill.trim()) || (Array.isArray(currentRecord.skills) && currentRecord.skills.length > 0 ? currentRecord.skills[0] : undefined)}
+                                        user={currentRecord.user}
+                                        onStepClick={setFocusedStep}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* 过滤器 */}
             <div style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 {['all', '24h', '12h', '1h'].map(tf => (
                     <button
@@ -1455,7 +2157,6 @@ function DetailPage() {
                     </button>
                 ))}
 
-                {/* Comparison Dimension Toggle */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginLeft: '1rem', borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
                     <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>比较维度:</span>
                     <div style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
@@ -1480,7 +2181,6 @@ function DetailPage() {
                     </div>
                 </div>
 
-                {/* Label Filter */}
                 {uniqueLabels.length > 0 && (
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem', borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
                         <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Label:</span>
@@ -1511,7 +2211,7 @@ function DetailPage() {
                             <div
                                 id="label-menu-dropdown"
                                 style={{
-                                    display: isLabelMenuOpen ? 'block' : 'none', // Changed to CSS toggling for export
+                                    display: isLabelMenuOpen ? 'block' : 'none',
                                     position: 'absolute',
                                     top: '100%',
                                     left: 0,
@@ -1563,7 +2263,6 @@ function DetailPage() {
                                 })}
                             </div>
 
-                            {/* Overlay for React Interaction Only */}
                             {isLabelMenuOpen && (
                                 <div
                                     style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
@@ -1574,7 +2273,6 @@ function DetailPage() {
                     </div>
                 )}
 
-                {/* Model Filter */}
                 {uniqueModels.length > 0 && (
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem', borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
                         <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Model:</span>
@@ -1651,7 +2349,6 @@ function DetailPage() {
                                 })}
                             </div>
 
-                            {/* Overlay for React Interaction Only */}
                             {isModelMenuOpen && (
                                 <div
                                     style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
@@ -1698,6 +2395,15 @@ function DetailPage() {
                                     <YAxis stroke="#64748b" fontSize={11} domain={[0, 100]} />
                                     <Tooltip contentStyle={{ background: '#1e293b', borderColor: '#334155' }} />
                                     <ReferenceLine y={90} stroke="#f87171" strokeDasharray="4 4" label={{ value: '90%', fill: '#f87171', fontSize: 11 }} />
+                                    {currentRecord && currentRecord.context_window_pct != null && (
+                                        <ReferenceLine
+                                            x={currentRecord.timestamp}
+                                            stroke="#fbbf24"
+                                            strokeDasharray="5 5"
+                                            strokeWidth={2}
+                                            label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                        />
+                                    )}
                                     <Line type="monotone" dataKey="context_window_pct" stroke="#a78bfa" dot={true} strokeWidth={2} />
                                 </LineChart>
                             </ResponsiveContainer>
@@ -1705,8 +2411,6 @@ function DetailPage() {
                     )}
                 </div>
             )}
-
-
 
             {/* Charts Section */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
@@ -1721,6 +2425,15 @@ function DetailPage() {
                             <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
                             <YAxis stroke="#64748b" fontSize={11} />
                             <Tooltip contentStyle={{ background: '#1e293b', borderColor: '#334155' }} />
+                            {currentRecord && (
+                                <ReferenceLine
+                                    x={currentRecord.timestamp}
+                                    stroke="#fbbf24"
+                                    strokeDasharray="5 5"
+                                    strokeWidth={2}
+                                    label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                />
+                            )}
                             <Line type="monotone" dataKey="latency" stroke="#38bdf8" dot={true} strokeWidth={2} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -1736,6 +2449,15 @@ function DetailPage() {
                             <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
                             <YAxis stroke="#64748b" fontSize={11} />
                             <Tooltip contentStyle={{ background: '#1e293b', borderColor: '#334155' }} />
+                            {currentRecord && (
+                                <ReferenceLine
+                                    x={currentRecord.timestamp}
+                                    stroke="#fbbf24"
+                                    strokeDasharray="5 5"
+                                    strokeWidth={2}
+                                    label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                />
+                            )}
                             <Line type="monotone" dataKey="tokens" stroke="#f472b6" dot={true} strokeWidth={2} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -1751,6 +2473,15 @@ function DetailPage() {
                             <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
                             <YAxis stroke="#64748b" fontSize={11} domain={[0, 1]} />
                             <Tooltip contentStyle={{ background: '#1e293b', borderColor: '#334155' }} />
+                            {currentRecord && (
+                                <ReferenceLine
+                                    x={currentRecord.timestamp}
+                                    stroke="#fbbf24"
+                                    strokeDasharray="5 5"
+                                    strokeWidth={2}
+                                    label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                />
+                            )}
                             <Line type="monotone" dataKey="answer_score" stroke="#4ade80" dot={true} strokeWidth={2} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -1766,6 +2497,15 @@ function DetailPage() {
                             <XAxis dataKey="timestamp" tickFormatter={formatTime} stroke="#64748b" fontSize={11} />
                             <YAxis stroke="#64748b" fontSize={11} domain={[0, 1]} />
                             <Tooltip contentStyle={{ background: '#1e293b', borderColor: '#334155' }} />
+                            {currentRecord && (
+                                <ReferenceLine
+                                    x={currentRecord.timestamp}
+                                    stroke="#fbbf24"
+                                    strokeDasharray="5 5"
+                                    strokeWidth={2}
+                                    label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                />
+                            )}
                             <Line type="monotone" dataKey="skill_recall_rate" stroke="#f472b6" dot={true} strokeWidth={2} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -1788,6 +2528,15 @@ function DetailPage() {
                                   }}
                                   contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
                               />
+                              {currentRecord && currentRecord.cost != null && (
+                                  <ReferenceLine
+                                      x={currentRecord.timestamp}
+                                      stroke="#fbbf24"
+                                      strokeDasharray="5 5"
+                                      strokeWidth={2}
+                                      label={{ value: '本次', fill: '#fbbf24', fontSize: 11, position: 'insideTopLeft' }}
+                                  />
+                              )}
                               <Line type="monotone" dataKey="cpsr" name="CPSR" stroke="#a78bfa" strokeWidth={2} dot={true} />
                           </LineChart>
                       </ResponsiveContainer>
@@ -1866,11 +2615,14 @@ function DetailPage() {
                 </div>
             )}
 
-            {/* List Section */}
+            {/* 同问题执行记录 */}
             <div className="list-container">
-                <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>执行记录详情</h2>
+                <div style={{ marginBottom: '1rem' }}>
+                    <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>同问题执行记录</h2>
+                    <p style={{ fontSize: '0.9rem', color: '#94a3b8' }}>点击记录可查看详细信息</p>
+                </div>
                 {/* Headers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '0.9rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', padding: '1rem', borderBottom: '1px solid #334155', color: '#94a3b8', fontSize: '0.9rem' }}>
                     <div>时间 / ID</div>
                     <div>标签</div>
                     <div>时延</div>
@@ -1878,771 +2630,82 @@ function DetailPage() {
                     <div>技能召回率</div>
                     <div>窗口%</div>
                     <div>评分</div>
-                    <div></div>
                 </div>
 
                 {filteredData.slice().reverse().map(item => {
-                    const taskId = item.task_id || item.upload_id || `temp-${item.timestamp}`;
-                    const isExpanded = expandedIds.has(taskId);
-                    const session = sessionData[taskId];
+                    const itemTaskId = item.task_id || item.upload_id || `temp-${item.timestamp}`;
+                    const isCurrentRecord = itemTaskId === taskId;
 
                     return (
                         <div
-                            key={taskId}
+                            key={itemTaskId}
                             className="record-row"
                             data-timestamp={new Date(item.timestamp).getTime()}
                             data-label={item.label || '__no_label__'}
-                            style={{ borderBottom: '1px solid #1e293b', background: '#1e293b', marginBottom: '1px' }}
+                            style={{
+                                borderBottom: '1px solid #1e293b',
+                                background: isCurrentRecord ? 'rgba(56, 189, 248, 0.15)' : '#1e293b',
+                                marginBottom: '1px',
+                                cursor: 'pointer',
+                                transition: 'background 0.2s'
+                            }}
+                            onClick={() => {
+                                if (!isCurrentRecord) {
+                                    const params = new URLSearchParams();
+                                    params.set('query', item.query);
+                                    if (item.framework) params.set('framework', item.framework);
+                                    params.set('expandTaskId', itemTaskId);
+                                    window.open(`/details?${params.toString()}`, '_blank');
+                                }
+                            }}
+                            onMouseOver={(e) => {
+                                if (!isCurrentRecord) {
+                                    e.currentTarget.style.background = '#334155';
+                                }
+                            }}
+                            onMouseOut={(e) => {
+                                if (!isCurrentRecord) {
+                                    e.currentTarget.style.background = '#1e293b';
+                                }
+                            }}
                         >
-                            {/* Summary Row */}
-                            <div
-                                className="record-summary"
-                                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 50px', padding: '1rem', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s' }}
-                                onClick={() => toggleExpand(taskId)}
-                                onMouseOver={(e: any) => e.currentTarget.style.background = '#334155'}
-                                onMouseOut={(e: any) => e.currentTarget.style.background = 'transparent'}
-                            >
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', padding: '1rem', alignItems: 'center' }}>
                                 <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{formatFullTime(item.timestamp)}</div>
-                                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{taskId}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {formatFullTime(item.timestamp)}
+                                        {isCurrentRecord && (
+                                            <span style={{
+                                                background: '#38bdf8',
+                                                color: '#0f172a',
+                                                padding: '2px 8px',
+                                                borderRadius: '4px',
+                                                fontSize: '0.7rem',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                当前
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{itemTaskId}</div>
                                 </div>
                                 <div style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>
                                     {item.label || '-'}
                                 </div>
                                 <div>{item.latency ? (item.latency < 1 ? (item.latency * 1000).toFixed(0) + 'ms' : item.latency.toFixed(2) + 's') : '-'}</div>
                                 <div>{item.tokens}</div>
-                                <div style={{ 
-                                    color: item.skill_recall_rate !== null && item.skill_recall_rate !== undefined ? 
-                                           (item.skill_recall_rate === 1.0 ? '#4ade80' : 
+                                <div style={{
+                                    color: item.skill_recall_rate !== null && item.skill_recall_rate !== undefined ?
+                                           (item.skill_recall_rate === 1.0 ? '#4ade80' :
                                             item.skill_recall_rate > 0 ? '#fbbf24' : '#f87171') : '#94a3b8',
                                     fontWeight: 'bold'
                                 }}>
-                                    {item.skill_recall_rate !== null && item.skill_recall_rate !== undefined ? 
+                                    {item.skill_recall_rate !== null && item.skill_recall_rate !== undefined ?
                                      (item.skill_recall_rate * 100).toFixed(0) + '%' : '--'}
                                 </div>
                                 <div style={{ color: item.context_window_pct != null ? (item.context_window_pct > 90 ? '#f87171' : '#4ade80') : '#94a3b8' }}>
                                     {item.context_window_pct != null ? `${item.context_window_pct.toFixed(1)}%` : '-'}
                                 </div>
                                 <div style={{ color: item.answer_score === null ? '#94a3b8' : ((item.answer_score || 0) > 0.8 ? '#4ade80' : '#f87171') }}>{item.answer_score === null ? '--' : item.answer_score?.toFixed(2)}</div>
-                                <div style={{ textAlign: 'center', color: '#94a3b8' }} className="expand-icon">
-                                    {isExpanded ? '▲' : '▼'}
-                                </div>
-                            </div>
-
-                            {/* Details Expanded */}
-                            <div className="record-detail" style={{ display: isExpanded ? 'block' : 'none', padding: '1.5rem', background: '#0f172a', borderTop: '1px solid #334155' }}>
-                                {/* Main Content Grid: Left (Result/Failures) vs Right (Skill Analysis) */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', marginBottom: '2rem', alignItems: 'start' }}>
-
-                                    {/* --- LEFT COLUMN --- */}
-                                    <div style={{ minWidth: 0 }}>
-
-                                        {/* 1. Query */}
-                                        <div style={{ marginBottom: '1.5rem' }}>
-                                            <h4 style={sectionHeader}>Query</h4>
-                                            {editingQueryFor === taskId ? (
-                                                <div>
-                                                    <textarea
-                                                        value={editQueryValue}
-                                                        onChange={(e) => setEditQueryValue(e.target.value)}
-                                                        rows={3}
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '0.75rem',
-                                                            background: '#1e293b',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '6px',
-                                                            color: '#e2e8f0',
-                                                            fontFamily: 'monospace',
-                                                            fontSize: '0.9rem',
-                                                            resize: 'vertical'
-                                                        }}
-                                                        placeholder="输入 query"
-                                                    />
-                                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
-                                                        <button
-                                                            onClick={() => saveQuery(taskId, item.upload_id)}
-                                                            disabled={querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving'}
-                                                            style={{
-                                                                padding: '6px 14px',
-                                                                background: '#38bdf8',
-                                                                color: '#0f172a',
-                                                                border: 'none',
-                                                                borderRadius: '4px',
-                                                                cursor: querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving' ? 'not-allowed' : 'pointer',
-                                                                fontWeight: 'bold'
-                                                            }}
-                                                        >
-                                                            {querySaveStatus?.id === taskId && querySaveStatus?.status === 'saving' ? '保存中...' : '保存'}
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEditQuery}
-                                                            style={{
-                                                                padding: '6px 14px',
-                                                                background: '#334155',
-                                                                color: '#94a3b8',
-                                                                border: 'none',
-                                                                borderRadius: '4px',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >
-                                                            取消
-                                                        </button>
-                                                        {querySaveStatus?.id === taskId && querySaveStatus?.status === 'ok' && (
-                                                            <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>{querySaveStatus.msg}</span>
-                                                        )}
-                                                        {querySaveStatus?.id === taskId && querySaveStatus?.status === 'error' && (
-                                                            <span style={{ color: '#f87171', fontSize: '0.9rem' }}>{querySaveStatus.msg}</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                                                    <div style={codeBlock}>{item.query || '(空)'}</div>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); startEditQuery(taskId, item.query || ''); }}
-                                                        style={{
-                                                            padding: '4px 10px',
-                                                            background: 'transparent',
-                                                            color: '#38bdf8',
-                                                            border: '1px solid #38bdf8',
-                                                            borderRadius: '4px',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '4px',
-                                                            fontSize: '0.8rem',
-                                                            whiteSpace: 'nowrap'
-                                                        }}
-                                                    >
-                                                        ✏️ 编辑
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* 2. Final Result */}
-                                        <div style={{ marginBottom: '1.5rem' }}>
-                                            <h4 style={sectionHeader}>Final Result</h4>
-
-                                            {editingResultFor === taskId ? (
-                                                <div style={{ marginTop: '0.5rem' }}>
-                                                    <textarea
-                                                        value={editResultValue}
-                                                        onChange={(e) => setEditResultValue(e.target.value)}
-                                                        rows={6}
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '0.75rem',
-                                                            background: '#1e293b',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '6px',
-                                                            color: '#e2e8f0',
-                                                            fontFamily: 'monospace',
-                                                            fontSize: '0.9rem',
-                                                            resize: 'vertical'
-                                                        }}
-                                                        placeholder="输入或上传 Final Result"
-                                                    />
-                                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
-                                                        <button
-                                                            onClick={() => saveFinalResult(taskId, item.upload_id)}
-                                                            disabled={resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving'}
-                                                            style={{
-                                                                padding: '6px 14px',
-                                                                background: '#38bdf8',
-                                                                color: '#0f172a',
-                                                                border: 'none',
-                                                                borderRadius: '4px',
-                                                                cursor: resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving' ? 'not-allowed' : 'pointer',
-                                                                fontWeight: 'bold'
-                                                            }}
-                                                        >
-                                                            {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'saving' ? '保存中...' : '保存并重评'}
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEditResult}
-                                                            style={{
-                                                                padding: '6px 14px',
-                                                                background: '#334155',
-                                                                color: '#94a3b8',
-                                                                border: 'none',
-                                                                borderRadius: '4px',
-                                                                cursor: 'pointer'
-                                                            }}
-                                                        >
-                                                            取消
-                                                        </button>
-                                                        <label style={{
-                                                            padding: '6px 14px',
-                                                            background: '#2d3748',
-                                                            color: '#fbbf24',
-                                                            border: '1px solid #fbbf24',
-                                                            borderRadius: '4px',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '4px',
-                                                            fontSize: '0.85rem'
-                                                        }}>
-                                                            📄 上传报告
-                                                            <input
-                                                                type="file"
-                                                                accept=".md,.txt,.pdf,.markdown"
-                                                                style={{ display: 'none' }}
-                                                                onChange={handleUploadResult}
-                                                            />
-                                                        </label>
-
-                                                        {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'ok' && (
-                                                            <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>{resultSaveStatus.msg}</span>
-                                                        )}
-                                                        {resultSaveStatus?.id === taskId && resultSaveStatus?.status === 'error' && (
-                                                            <span style={{ color: '#f87171', fontSize: '0.9rem' }}>{resultSaveStatus.msg}</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div>
-                                                    <div style={{
-                                                        ...codeBlock,
-                                                        maxHeight: '300px',
-                                                        overflowY: 'auto',
-                                                        padding: '1rem',
-                                                        background: '#1e293b',
-                                                        border: '1px solid #334155',
-                                                        borderRadius: '6px'
-                                                    }}>
-                                                        {item.final_result || '(No Result)'}
-                                                    </div>
-                                                    <div style={{ marginTop: '0.5rem' }}>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); startEditResult(taskId, item.final_result || ''); }}
-                                                            style={{
-                                                                padding: '4px 10px',
-                                                                background: 'transparent',
-                                                                color: '#38bdf8',
-                                                                border: '1px solid #38bdf8',
-                                                                borderRadius: '4px',
-                                                                cursor: 'pointer',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                                fontSize: '0.8rem'
-                                                            }}
-                                                        >
-                                                            ✏️ 编辑 / 替换结果
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* 3. Judgment Reason - 表格形式 */}
-                                        <div style={{ marginBottom: '1.5rem' }}>
-                                            <h4 style={sectionHeader}>Judgment Reason</h4>
-                                            {(() => {
-                                                const evalItems = parseEvaluationItemsFromReason(item.judgment_reason || '');
-                                                if (evalItems.length === 0) {
-                                                    return (
-                                                        <div style={{
-                                                            ...codeBlock,
-                                                            background: '#1e293b',
-                                                            padding: '1rem',
-                                                            borderRadius: '6px',
-                                                            border: '1px solid #334155'
-                                                        }}>
-                                                            {item.judgment_reason || '-'}
-                                                        </div>
-                                                    );
-                                                }
-                                                return (
-                                                    <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflow: 'hidden' }}>
-                                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                                            <thead>
-                                                                <tr style={{ background: '#0f172a' }}>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '70px' }}>ID</th>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155' }}>评分标准</th>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px' }}>得分</th>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px' }}>权重</th>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '60px' }}>扣分</th>
-                                                                    <th style={{ padding: '10px 12px', textAlign: 'center', color: '#94a3b8', borderBottom: '1px solid #334155', width: '50px' }}>关联</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {evalItems.map((evalItem, idx) => {
-                                                                    const isHighlighted = highlightedIssueId === evalItem.id;
-                                                                    const relatedSkillIssue = item.skill_issues?.find(si => si.id === evalItem.id);
-                                                                    const deduction = (1 - evalItem.match_score) * evalItem.weight;
-                                                                    return (
-                                                                        <tr 
-                                                                            key={idx} 
-                                                                            id={`eval-item-${taskId}-${evalItem.id}`}
-                                                                            style={{ 
-                                                                                background: isHighlighted ? 'rgba(56, 189, 248, 0.2)' : (idx % 2 === 0 ? '#1e293b' : '#1a2530'),
-                                                                                cursor: relatedSkillIssue ? 'pointer' : 'default',
-                                                                                transition: 'background 0.2s'
-                                                                            }}
-                                                                            onClick={() => {
-                                                                                if (relatedSkillIssue) {
-                                                                                    setHighlightedIssueId(isHighlighted ? null : evalItem.id);
-                                                                                    if (!isHighlighted) {
-                                                                                        setTimeout(() => {
-                                                                                            const container = document.getElementById(`skill-issues-container-${taskId}`);
-                                                                                            const el = document.getElementById(`skill-issue-${taskId}-${evalItem.id}`);
-                                                                                            if (container && el) {
-                                                                                                // First, scroll the page so the Skill Analysis container is visible
-                                                                                                container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                                                                                // Then, scroll within the container to the specific issue
-                                                                                                setTimeout(() => {
-                                                                                                    const containerRect = container.getBoundingClientRect();
-                                                                                                    const elRect = el.getBoundingClientRect();
-                                                                                                    const relativeTop = elRect.top - containerRect.top;
-                                                                                                    const targetScroll = container.scrollTop + relativeTop - container.clientHeight / 2 + elRect.height / 2;
-                                                                                                    container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
-                                                                                                }, 300);
-                                                                                            }
-                                                                                        }, 50);
-                                                                                    }
-                                                                                }
-                                                                            }}
-                                                                            onMouseEnter={(e) => { if (!isHighlighted && relatedSkillIssue) e.currentTarget.style.background = 'rgba(56, 189, 248, 0.1)'; }}
-                                                                            onMouseLeave={(e) => { if (!isHighlighted && relatedSkillIssue) e.currentTarget.style.background = idx % 2 === 0 ? '#1e293b' : '#1a2530'; }}
-                                                                        >
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
-                                                                                <span style={{
-                                                                                    background: evalItem.type === 'root_cause' ? '#f472b6' : '#38bdf8',
-                                                                                    color: '#0f172a',
-                                                                                    padding: '2px 8px',
-                                                                                    borderRadius: '4px',
-                                                                                    fontSize: '0.75rem',
-                                                                                    fontWeight: 'bold',
-                                                                                    whiteSpace: 'nowrap'
-                                                                                }}>
-                                                                                    {evalItem.id}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#e2e8f0' }}>
-                                                                                <div style={{ fontWeight: 500, marginBottom: '4px', wordBreak: 'break-word' }}>
-                                                                                    {relatedSkillIssue?.content || evalItem.content}
-                                                                                </div>
-                                                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', wordBreak: 'break-word' }}>{evalItem.explanation}</div>
-                                                                            </td>
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
-                                                                                <span style={{ 
-                                                                                    color: evalItem.match_score >= 1 ? '#4ade80' : evalItem.match_score >= 0.5 ? '#fbbf24' : '#f87171',
-                                                                                    fontWeight: 'bold',
-                                                                                    whiteSpace: 'nowrap'
-                                                                                }}>
-                                                                                    {(evalItem.match_score * 100).toFixed(0)}%
-                                                                                </span>
-                                                                            </td>
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center', color: '#94a3b8' }}>
-                                                                                {evalItem.weight.toFixed(1)}
-                                                                            </td>
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
-                                                                                <span style={{ 
-                                                                                    color: deduction > 0 ? '#f87171' : '#4ade80',
-                                                                                    fontWeight: 'bold',
-                                                                                    whiteSpace: 'nowrap'
-                                                                                }}>
-                                                                                    -{deduction.toFixed(2)}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', textAlign: 'center' }}>
-                                                                                {relatedSkillIssue && (
-                                                                                    <span style={{ 
-                                                                                        background: '#ef4444',
-                                                                                        color: '#fff',
-                                                                                        padding: '2px 6px',
-                                                                                        borderRadius: '4px',
-                                                                                        fontSize: '0.7rem',
-                                                                                        whiteSpace: 'nowrap'
-                                                                                    }}>
-                                                                                        Skill
-                                                                                    </span>
-                                                                                )}
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-
-                                        {/* 4. Failures Section - 表格形式 */}
-                                        {item.failures && item.failures.length > 0 ? (
-                                            <div style={{ marginBottom: '1.5rem' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                                                    <h4 style={{ ...sectionHeader, color: '#f87171', borderLeft: '3px solid #f87171', paddingLeft: '8px', borderBottom: 'none', margin: 0 }}> Intermediate Failures / Anomalies </h4>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <select 
-                                                            value={failureFilter} 
-                                                            onChange={(e) => setFailureFilter(e.target.value as 'all' | 'failure' | 'anomaly')}
-                                                            style={{ 
-                                                                background: '#0f172a', 
-                                                                border: '1px solid #334155', 
-                                                                color: '#94a3b8', 
-                                                                borderRadius: '4px', 
-                                                                padding: '4px 8px', 
-                                                                fontSize: '0.8rem' 
-                                                            }}
-                                                        >
-                                                            <option value="all">全部</option>
-                                                            <option value="failure">失败</option>
-                                                            <option value="anomaly">异常</option>
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                                <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', overflow: 'hidden' }}>
-                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                                        <thead>
-                                                            <tr style={{ background: '#0f172a' }}>
-                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '100px' }}>类型</th>
-                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155' }}>描述</th>
-                                                                <th style={{ padding: '10px 12px', textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155', width: '150px' }}>恢复措施</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {item.failures
-                                                                .filter(fail => {
-                                                                    if (failureFilter === 'all') return true;
-                                                                    const type = fail.failure_type.toLowerCase();
-                                                                    if (failureFilter === 'failure') return type.includes('fail') || type.includes('error');
-                                                                    if (failureFilter === 'anomaly') return type.includes('anomaly') || type.includes('warn');
-                                                                    return true;
-                                                                })
-                                                                .map((fail, idx) => (
-                                                                <tr key={idx} style={{ background: idx % 2 === 0 ? '#1e293b' : '#1a2530' }}>
-                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
-                                                                        <span style={{ 
-                                                                            background: fail.failure_type.toLowerCase().includes('error') || fail.failure_type.toLowerCase().includes('fail') ? '#f87171' : '#fbbf24', 
-                                                                            color: '#0f172a', 
-                                                                            padding: '2px 8px', 
-                                                                            borderRadius: '4px', 
-                                                                            fontSize: '0.75rem', 
-                                                                            fontWeight: 'bold' 
-                                                                        }}>
-                                                                            {fail.failure_type}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155' }}>
-                                                                        <div style={{ color: '#fca5a5', fontWeight: 500, marginBottom: '4px' }}>{fail.description}</div>
-                                                                        {fail.context && (
-                                                                            <div style={{ 
-                                                                                fontSize: '0.8rem', 
-                                                                                color: '#94a3b8', 
-                                                                                fontFamily: 'monospace', 
-                                                                                background: 'rgba(0,0,0,0.3)', 
-                                                                                padding: '6px 8px', 
-                                                                                borderRadius: '4px',
-                                                                                marginTop: '4px',
-                                                                                whiteSpace: 'pre-wrap',
-                                                                                wordBreak: 'break-all'
-                                                                            }}>
-                                                                                {fail.context}
-                                                                            </div>
-                                                                        )}
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #334155', color: '#86efac', fontSize: '0.8rem' }}>
-                                                                        {fail.recovery || '-'}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div style={{ padding: '1rem', border: '1px dashed #334155', borderRadius: '6px', color: '#64748b', textAlign: 'center', fontSize: '0.9rem' }}>
-                                                No intermediate failures detected.
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* --- RIGHT COLUMN --- */}
-                                    <div style={{ minWidth: 0, position: 'sticky', top: '2rem', zIndex: 10 }}>
-
-                                        {/* 1. Skills Used */}
-                                        <div style={{ marginBottom: '2rem' }}>
-                                            <h4 style={sectionHeader}>Skills Used</h4>
-                                            <div style={{ ...codeBlock, padding: '0.5rem', background: '#1e293b', borderRadius: '4px', border: '1px solid #334155' }}>
-                                                <SkillLinks
-                                                    skills={item.skills}
-                                                    skill={item.skill}
-                                                    skillVersion={item.skill_version}
-                                                    user={item.user}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* 2. Skill Effectiveness Analysis */}
-                                        <div style={{ background: '#1e293b', borderRadius: '6px', border: '1px solid #334155', padding: '1rem' }}>
-                                            <h4 style={{ ...sectionHeader, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span>🛡️</span> Skill Analysis
-                                                {highlightedIssueId && (
-                                                    <span style={{ 
-                                                        fontSize: '0.75rem', 
-                                                        color: '#38bdf8', 
-                                                        background: 'rgba(56, 189, 248, 0.1)', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px',
-                                                        marginLeft: 'auto'
-                                                    }}>
-                                                        已选中: {highlightedIssueId}
-                                                    </span>
-                                                )}
-                                            </h4>
-
-                                            {item.skill_issues && item.skill_issues.length > 0 ? (
-                                                <div>
-                                                    <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <div style={{ textAlign: 'center', background: '#0f172a', padding: '8px', borderRadius: '4px', border: '1px solid #ef4444' }}>
-                                                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ef4444' }}>{item.skill_issues.length}</div>
-                                                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>SKILL ISSUES</div>
-                                                        </div>
-                                                        <div style={{ fontSize: '0.85rem', color: '#cbd5e1', flex: 1 }}>
-                                                            以下评分项扣分可通过优化 Skill 定义改善：
-                                                        </div>
-                                                    </div>
-
-                                                    <div id={`skill-issues-container-${taskId}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto', position: 'relative' }}>
-                                                        {item.skill_issues.map((issue: any, idx: number) => {
-                                                            const isHighlighted = highlightedIssueId === issue.id;
-                                                            return (
-                                                                <div 
-                                                                    key={idx} 
-                                                                    id={`skill-issue-${taskId}-${issue.id}`}
-                                                                    data-issue-id={issue.id}
-                                                                    style={{ 
-                                                                        padding: '10px', 
-                                                                        background: isHighlighted ? 'rgba(56, 189, 248, 0.2)' : 'rgba(239, 68, 68, 0.1)', 
-                                                                        borderLeft: isHighlighted ? '3px solid #38bdf8' : '3px solid #ef4444', 
-                                                                        borderRadius: '0 4px 4px 0',
-                                                                        cursor: 'pointer',
-                                                                        transition: 'all 0.2s'
-                                                                    }}
-                                                                    onClick={() => {
-                                                                        setHighlightedIssueId(isHighlighted ? null : issue.id);
-                                                                        if (!isHighlighted) {
-                                                                            setTimeout(() => {
-                                                                                const el = document.getElementById(`eval-item-${taskId}-${issue.id}`);
-                                                                                if (el) {
-                                                                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                                                }
-                                                                            }, 50);
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                                                        <span style={{
-                                                                            background: issue.type === 'root_cause' ? '#f472b6' : '#38bdf8',
-                                                                            color: '#0f172a',
-                                                                            padding: '2px 6px',
-                                                                            borderRadius: '4px',
-                                                                            fontSize: '0.7rem',
-                                                                            fontWeight: 'bold'
-                                                                        }}>
-                                                                            {issue.id}
-                                                                        </span>
-                                                                        <span style={{ color: '#fca5a5', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                                                                            得分: {((issue.match_score || 0) * 100).toFixed(0)}%
-                                                                        </span>
-                                                                        {isHighlighted && (
-                                                                            <span style={{ 
-                                                                                fontSize: '0.7rem', 
-                                                                                color: '#38bdf8',
-                                                                                marginLeft: 'auto'
-                                                                            }}>
-                                                                                ← 点击左侧表格联动
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div style={{ fontSize: '0.85rem', color: '#e2e8f0', marginBottom: '6px' }}>
-                                                                        <strong>评分标准：</strong>{issue.content}
-                                                                    </div>
-                                                                    <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '6px' }}>
-                                                                        <strong>扣分原因：</strong>{issue.explanation}
-                                                                    </div>
-                                                                    <div style={{ fontSize: '0.8rem', color: '#fcd34d', marginBottom: '6px', fontStyle: 'italic' }}>
-                                                                        <strong>分析依据：</strong>{issue.reasoning}
-                                                                    </div>
-                                                                    {issue.improvement_suggestion && (
-                                                                        <div style={{ fontSize: '0.8rem', color: '#86efac', background: 'rgba(74, 222, 128, 0.1)', padding: '6px', borderRadius: '4px' }}>
-                                                                            <strong>💡 改进建议：</strong>{issue.improvement_suggestion}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div style={{ color: '#4ade80', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <span style={{ fontSize: '1.2rem' }}>✅</span>
-                                                    <div>
-                                                        <strong>No Skill Issues Detected</strong>
-                                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>
-                                                            所有扣分项均不是 Skill 定义的问题，无需优化 Skill。
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Execution Flow Comparison */}
-                                <ExecutionFlowComparison 
-                                    executionId={taskId}
-                                    skillId={(item.skill && item.skill.trim()) || (Array.isArray(item.skills) && item.skills.length > 0 ? item.skills[0] : undefined)}
-                                    user={item.user}
-                                    onStepClick={setFocusedStep}
-                                />
-
-
-                                    {/* Runtime Metrics */}
-                                    {(item.llm_call_count != null || item.tool_call_count != null || item.input_tokens != null || item.output_tokens != null || item.tool_call_error_count != null) && (
-                                        <div style={{marginBottom: '1.5rem'}}>
-                                            <h4 style={sectionHeader}>Runtime Metrics</h4>
-                                            <div style={{
-                                                display: 'grid',
-                                                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                                                gap: '0.75rem',
-                                                marginTop: '0.5rem'
-                                            }}>
-                                                {[
-                                                    { label: 'LLM Calls', value: item.llm_call_count, color: '#38bdf8' },
-                                                    { label: 'Tool Calls', value: item.tool_call_count, color: '#38bdf8' },
-                                                    { label: 'Tool Errors', value: item.tool_call_error_count ?? 0, color: item.tool_call_error_count ? '#f87171' : '#4ade80' },
-                                                    { label: 'Input Tokens', value: item.input_tokens, color: '#38bdf8' },
-                                                    { label: 'Output Tokens', value: item.output_tokens, color: '#38bdf8' },
-                                                    {
-                                                        label: 'Context Window %',
-                                                        value: item.context_window_pct,
-                                                        color: item.context_window_pct != null ? (item.context_window_pct > 90 ? '#f87171' : '#4ade80') : '#38bdf8',
-                                                        format: (v: number) => `${v.toFixed(1)}%`,
-                                                        fallback: (item.context_window_pct == null && item.max_single_call_tokens != null) ? 'N/A' : undefined,
-                                                        tooltip: item.context_window_pct != null
-                                                            ? `max_single_call_tokens (${item.max_single_call_tokens?.toLocaleString()}) / context_window_limit (${item.context_window_limit?.toLocaleString()}) × 100` + (item.model ? ` (${item.model})` : '') + `. Source: ${item.context_window_source || 'default'}.`
-                                                            : item.model
-                                                                ? `Context window not configured for model: ${item.model}.`
-                                                                : 'Model unknown. Context window % cannot be calculated.'
-                                                    },
-                                                    {
-                                                        label: 'Est. Cost',
-                                                        value: item.cost,
-                                                        color: '#38bdf8',
-                                                        format: (v: number) => `$${v === 0 ? '0.00' : v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(3) : v.toFixed(2)}`,
-                                                        fallback: (item.cost == null && item.input_tokens != null) ? 'N/A' : undefined,
-                                                        tooltip: item.cost_pricing
-                                                            ? (item.cache_read_input_tokens || item.cache_creation_input_tokens
-                                                                ? `Cost = base_input × $${item.cost_pricing.inputTokenPrice}/M + cache_read × $${item.cost_pricing.cacheReadInputTokenPrice}/M + cache_create × $${item.cost_pricing.cacheCreationInputTokenPrice}/M + output × $${item.cost_pricing.outputTokenPrice}/M`
-                                                                : `Cost = input_tokens × $${item.cost_pricing.inputTokenPrice}/M + output_tokens × $${item.cost_pricing.outputTokenPrice}/M`)
-                                                                + (item.model ? ` (${item.model})` : '') + `. Estimated from ${item.cost_pricing.source === 'custom' ? 'custom' : 'default'} pricing.`
-                                                            : item.model
-                                                                ? `Pricing not available for model: ${item.model}.`
-                                                                : 'Model unknown. Cost cannot be estimated.'
-                                                    },
-                                                ].map((metric, idx) => (
-                                                    <div key={idx} style={{
-                                                        background: '#1e293b',
-                                                        border: '1px solid #334155',
-                                                        borderRadius: '6px',
-                                                        padding: '0.75rem',
-                                                        textAlign: 'center'
-                                                    }}>
-                                                        <div style={{
-                                                            fontSize: '1.3rem',
-                                                            fontWeight: 'bold',
-                                                            color: metric.color
-                                                        }}>
-                                                            {metric.value != null ? ('format' in metric && metric.format ? metric.format(metric.value) : metric.value.toLocaleString()) : ('fallback' in metric && metric.fallback ? metric.fallback : '-')}
-                                                        </div>
-                                                        <div style={{
-                                                            fontSize: '0.75rem',
-                                                            color: '#64748b',
-                                                            marginTop: '4px'
-                                                        }}>
-                                                            {metric.label}
-                                                            {'tooltip' in metric && metric.tooltip && <CustomTooltip content={metric.tooltip} />}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                {session ? (
-                                    session.error ? (
-                                        <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>{session.error}</div>
-                                    ) : (
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                                            <div style={{ minWidth: 0 }}>
-                                                <div style={{
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    marginBottom: '0.5rem',
-                                                    borderBottom: '1px solid #334155',
-                                                    paddingBottom: '4px',
-                                                    minHeight: '34px'
-                                                }}>
-                                                    <h4 style={sectionHeader}>Session Data (Raw JSON)</h4>
-                                                </div>
-                                                <div style={{ background: '#1e293b', padding: '1rem', borderRadius: '8px', overflow: 'hidden' }}>
-                                                    <ReactJson
-                                                        key={`json-${focusedStep !== null ? focusedStep : 'default'}`}
-                                                        src={formatSessionForDisplay(session)}
-                                                        theme="monokai"
-                                                        shouldCollapse={(field) => {
-                                                            const path = [...(field.namespace || []), field.name]
-                                                                .filter(key => key != null && String(key).trim() !== '')
-                                                                .map(String);
-                                                            if (focusedStep === null) {
-                                                                if (path[0] === 'interactions' && path.length >= 2) return true;
-                                                                return false;
-                                                            }
-
-                                                            if (path[0] === 'interactions') {
-                                                                const stepStr = path[1];
-
-                                                                if (stepStr !== undefined) {
-                                                                    const stepIndex = Number(stepStr);
-                                                                    if (!isNaN(stepIndex)) {
-                                                                        if (stepIndex !== focusedStep) {
-                                                                            return true;
-                                                                        }
-                                                                        return false;
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            return false;
-                                                        }}
-                                                        displayDataTypes={false}
-                                                        name={null}
-                                                        style={{ backgroundColor: 'transparent', fontSize: '0.85rem' }}
-                                                        enableClipboard={true}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div style={{ minWidth: 0 }}>
-                                                <RenderInteractionList
-                                                    interactions={session.interactions}
-                                                    focusedStep={focusedStep}
-                                                    onStepClick={setFocusedStep}
-                                                />
-                                            </div>
-                                        </div>
-                                    )
-                                ) : (
-                                    <div style={{ color: '#38bdf8' }}>Loading session log...</div>
-                                )}
-
                             </div>
                         </div>
                     );
@@ -2652,7 +2715,6 @@ function DetailPage() {
     );
 }
 
-// Styles
 const cardStyle: React.CSSProperties = {
     background: '#1e293b',
     border: '1px solid #334155',
