@@ -16,7 +16,7 @@ async function runCommand(command, options = {}) {
       shell: true,
       ...options
     })
-    
+
     proc.on('close', (code) => {
       if (code === 0) {
         resolve()
@@ -24,7 +24,7 @@ async function runCommand(command, options = {}) {
         reject(new Error(`Command failed with code ${code}`))
       }
     })
-    
+
     proc.on('error', (err) => {
       reject(err)
     })
@@ -46,7 +46,7 @@ async function waitForService(port, maxRetries = 30, retryDelay = 1000) {
 async function getApiKey(port) {
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify({ username: 'admin' })
-    
+
     const options = {
       hostname: 'localhost',
       port: port,
@@ -57,7 +57,7 @@ async function getApiKey(port) {
         'Content-Length': Buffer.byteLength(postData)
       }
     }
-    
+
     const req = http.request(options, (res) => {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
@@ -78,11 +78,11 @@ async function getApiKey(port) {
         }
       })
     })
-    
+
     req.on('error', (e) => {
       reject(e)
     })
-    
+
     req.write(postData)
     req.end()
   })
@@ -100,7 +100,7 @@ async function callAutoSetup(port, apiKey) {
         'x-platform': isWindows ? 'windows' : 'unix'
       }
     }
-    
+
     const req = http.request(options, (res) => {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
@@ -112,11 +112,11 @@ async function callAutoSetup(port, apiKey) {
         }
       })
     })
-    
+
     req.on('error', (e) => {
       reject(e)
     })
-    
+
     req.end()
   })
 }
@@ -124,7 +124,7 @@ async function callAutoSetup(port, apiKey) {
 async function run(options = {}) {
   let port = options.port || 3000
   const errors = []
-  
+
   console.log('\n')
   console.log('╔════════════════════════════════════════════════════════════╗')
   console.log('║                                                            ║')
@@ -132,8 +132,24 @@ async function run(options = {}) {
   console.log('║                                                            ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
-  
+
   console.log('📦 【步骤 1/5】安装 npm 包...')
+
+  try {
+    const oldDbPath = path.join(process.cwd(), 'node_modules', '@witty-ai', 'skill-insight', 'data', 'witty_insight.db')
+    const newDbDir = path.join(os.homedir(), '.skill-insight', 'data')
+    const newDbPath = path.join(newDbDir, 'witty_insight.db')
+
+    if (fs.existsSync(oldDbPath) && !fs.existsSync(newDbPath)) {
+      console.log('   ⚠️ 检测到 node_modules 中存在旧版数据，正在执行迁移...')
+      if (!fs.existsSync(newDbDir)) fs.mkdirSync(newDbDir, { recursive: true })
+      fs.copyFileSync(oldDbPath, newDbPath)
+      console.log('   ✅ 旧版数据已成功迁移至安全目录')
+    }
+  } catch (e) {
+    console.log('   ⚠️ 数据迁移检测失败，跳过: ' + e.message)
+  }
+
   try {
     await runCommand('npm install @witty-ai/skill-insight', { silent: true })
     console.log('   ✅ npm 包安装成功\n')
@@ -141,13 +157,13 @@ async function run(options = {}) {
     errors.push({ step: 1, message: `npm install 失败: ${error.message}` })
     console.log(`   ❌ npm 包安装失败: ${error.message}\n`)
   }
-  
+
   const availablePort = findAvailablePort(port)
   if (availablePort !== port) {
     console.log(`🔄 端口 ${port} 已被占用，自动切换到端口 ${availablePort}\n`)
     port = availablePort
   }
-  
+
   console.log('🔧 【步骤 2/5】启动服务...')
   try {
     const logPath = path.join(os.homedir(), '.skill-insight', 'install.log')
@@ -155,7 +171,7 @@ async function run(options = {}) {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true })
     }
-    
+
     const startProc = spawn('npx', ['@witty-ai/skill-insight', 'start', '--port', port.toString()], {
       stdio: ['ignore', fs.openSync(logPath, 'a'), fs.openSync(logPath, 'a')],
       shell: true,
@@ -167,7 +183,7 @@ async function run(options = {}) {
     errors.push({ step: 2, message: `启动服务失败: ${error.message}` })
     console.log(`   ❌ 启动服务失败: ${error.message}\n`)
   }
-  
+
   console.log('🔑 【步骤 3/5】等待服务就绪并获取 API Key...')
   let apiKey = null
   try {
@@ -177,26 +193,26 @@ async function run(options = {}) {
       throw new Error(`服务在端口 ${port} 未就绪`)
     }
     console.log('   ✅ 服务已就绪')
-    
+
     apiKey = await getApiKey(port)
     console.log('   ✅ 获取到 API Key\n')
   } catch (error) {
     errors.push({ step: 3, message: `获取 API Key 失败: ${error.message}` })
     console.log(`\n   ❌ 获取 API Key 失败: ${error.message}\n`)
   }
-  
+
   console.log('🔌 【步骤 4/5】安装插件组件...')
   try {
     if (!apiKey) {
       throw new Error('没有可用的 API Key，跳过自动配置')
     }
-    
+
     const scriptContent = await callAutoSetup(port, apiKey)
     const isWindows = process.platform === 'win32'
     const scriptDir = path.join(os.homedir(), '.skill-insight')
-    
+
     fs.mkdirSync(scriptDir, { recursive: true })
-    
+
     let scriptPath, executeCommand
     if (isWindows) {
       scriptPath = path.join(scriptDir, 'auto_setup.ps1')
@@ -211,15 +227,15 @@ async function run(options = {}) {
       console.log('   📋 请选择要安装的框架...')
       executeCommand = `bash "${scriptPath}"`
     }
-    
+
     await runCommand(executeCommand)
-    
+
     console.log('\n   ✅ 插件安装完成\n')
   } catch (error) {
     errors.push({ step: 4, message: `插件安装失败: ${error.message}` })
     console.log(`   ❌ 插件安装失败: ${error.message}\n`)
   }
-  
+
   console.log('📚 【步骤 5/5】添加技能...')
   try {
     await runCommand('npx skills add https://atomgit.com/openeuler/witty-skill-insight.git')
@@ -228,11 +244,11 @@ async function run(options = {}) {
     errors.push({ step: 5, message: `添加技能失败: ${error.message}` })
     console.log(`   ❌ 添加技能失败: ${error.message}\n`)
   }
-  
+
   console.log('════════════════════════════════════════════════════════════')
   console.log('                    🎉 部署完成 🎉')
   console.log('════════════════════════════════════════════════════════════')
-  
+
   if (errors.length > 0) {
     console.log('\n')
     console.log('⚠️  以下步骤执行失败:')
@@ -244,7 +260,7 @@ async function run(options = {}) {
     console.log('\n')
     console.log('✅ 所有步骤执行成功!')
   }
-  
+
   console.log('\n')
   console.log('┌─────────────────────────────────────────────────────────────┐')
   console.log('│                                                             │')
