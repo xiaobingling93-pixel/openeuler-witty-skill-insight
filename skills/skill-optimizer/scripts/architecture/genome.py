@@ -185,21 +185,39 @@ class SkillGenome:
 
         genome = cls.from_markdown(content)
 
-        # Load auxiliary files (scripts/, references/)
+        meta = cls._load_meta_file(path)
+        if meta:
+            genome.file_meta = meta
+
+        exclude_dirs = {
+            "snapshots",
+            ".opt",
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            "venv",
+        }
+
         for item in path.rglob("*"):
+            rel = item.relative_to(path)
+            rel_parts = rel.parts
+            if any((p in exclude_dirs) or p.startswith(".") for p in rel_parts):
+                continue
             if (
                 item.is_file()
                 and item.name != "SKILL.md"
-                and "__pycache__" not in item.parts
-                and not item.name.startswith(".")
+                and item.name != "AUXILIARY_META.json"
             ):
+                rel_path = rel.as_posix()
+                if not (rel_path.startswith("scripts/") or rel_path.startswith("references/")):
+                    continue
                 try:
-                    rel_path = str(item.relative_to(path))
-                    with open(item, "r", encoding="utf-8", errors="ignore") as f:
-                        file_content = f.read()
-                        genome.files[rel_path] = file_content
-                except Exception as e:
-                    print(f"Warning: Could not read {item}: {e}")
+                    genome.files[rel_path] = item.read_text(
+                        encoding="utf-8", errors="ignore"
+                    )
+                except Exception:
+                    continue
 
         return genome
 

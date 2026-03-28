@@ -29,7 +29,7 @@ TEXT_EXTENSIONS = {
     ".java", ".c", ".cpp", ".h", ".hpp", ".sql", ".r", ".toml", ".cfg",
     ".ini", ".env", ".mjs", ".cjs", ".lua", ".pl", ".swift", ".kt",
 }
-SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", ".DS_Store"}
+SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", ".opt", "snapshots", ".DS_Store"}
 ALWAYS_INCLUDE = {"SKILL.md", "Makefile", "Dockerfile", "LICENSE", "LICENSE.txt"}
 
 
@@ -965,6 +965,7 @@ def main() -> None:
     parser.add_argument("--default-base", type=str, default=None, help="Label of the default base version to select in snapshots mode")
     parser.add_argument("--default-current", type=str, default=None, help="Default current version label (e.g. v1.1)")
     parser.add_argument("--output", "-o", "--static", type=Path, default=None, help="Output HTML file (if not set, opens in browser)")
+    parser.add_argument("--no-open", action="store_true", help="Do not open browser even if --output is not set")
     
     args = parser.parse_args()
 
@@ -1024,7 +1025,8 @@ def main() -> None:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(html)
         print(f"Opening diff in browser: file://{path}")
-        webbrowser.open(f"file://{path}")
+        if not args.no_open:
+            webbrowser.open(f"file://{path}")
 
 
 if __name__ == "__main__":
