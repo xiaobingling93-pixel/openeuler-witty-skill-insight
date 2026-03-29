@@ -4,7 +4,7 @@ import logging
 import os
 import pathlib
 import re
-from typing import List
+from typing import List, Optional
 
 import ast
 from langchain_core.prompts import ChatPromptTemplate

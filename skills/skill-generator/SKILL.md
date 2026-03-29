@@ -194,20 +194,67 @@ Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 b
 #### 5.1 推荐：合并模式 (Merge Mode)
 **默认推荐使用此模式**。将多个相关文档（如同一问题的不同故障案例）合并，提取共性故障模式，生成一个高质量的 Skill。
 
-```bash
-# 指定多个文件进行合并
-./scripts/gen.sh \
-  --input doc1.pdf \
-  --input doc2.md \
-  --mode merge \
-  --output ./merged-skill
+**执行流程说明**：
+Merge 模式采用**分阶段执行**的设计，每个阶段完成后需要有用户确认或者修改环节。
 
-# 指定目录（合并目录下所有文件）
-./scripts/gen.sh \
-  --input ./related_docs/ \
-  --mode merge \
-  --output ./merged-skill
-```
+**Merge 模式执行流程**：
+
+1. **阶段1：提取故障案例**
+   ```bash
+   ./scripts/gen.sh \
+     --mode merge \
+     --stage 1 \
+     --input doc1.pdf \
+     --input doc2.md \
+     --output ./merged-skill
+   ```
+   - 步骤1: 执行完成后，显示生成的故障案例文件：`$OUTPUT/references/failure_cases.yaml`摘要信息
+   - 步骤2: 询问用户‘继续’还是‘修改’
+   - 步骤3: 如果‘继续’，则执行阶段2，如果‘修改’,则:
+     - 让用户提供修改意见
+     - 根据用户修改意见，重新生成故障案例文件
+     - 回到步骤1
+
+2. **阶段2：生成故障模式**
+   ```bash
+   ./scripts/gen.sh \
+     --mode merge \
+     --stage 2 \
+     --input doc1.pdf \
+     --output ./merged-skill
+   ```
+   - 步骤1: 执行完成后，查看生成的故障模式文件：`$OUTPUT/references/failure_pattern.yaml`的摘要信息
+   - 步骤2: 询问用户‘继续’还是‘修改’
+   - 步骤3: 如果‘继续’，则执行阶段3，如果修改，则：
+     - 让用户提供修改意见
+     - 根据用户修改意见，重新生成故障模式文件
+     - 根据用户修改信息再次生成故障模式文件，
+     - 回到步骤1
+
+3. **阶段3：生成 Skill**
+   ```bash
+   ./scripts/gen.sh \
+     --mode merge \
+     --stage 3 \
+     --input doc1.pdf \
+     --output ./merged-skill
+   ```
+   必须执行以下步骤：
+   - 步骤1: 执行完成后，查看生成的 Skill 文件：`$OUTPUT/SKILL.md`的摘要信息，询问用户‘继续’还是‘修改’
+   - 步骤2: 如果‘继续’，则生成SKILL阶段完成，才可以执行第6步，如果‘修改’，则：
+     - 让用户提供修改意见
+     - 根据用户修改信息重新生成Skill文件
+     - 回到步骤1
+
+**参数说明**：
+- `--stage {1,2,3}`：指定执行阶段（必需）, 三个步骤都由用户确认后，才可以执行第6步
+- `--input`：输入文档路径（每个阶段都需要，用于上下文）
+- `--output`：输出目录（所有阶段使用相同的输出目录）
+
+**使用提示**：
+- 每个阶段执行完成后，脚本会显示生成的文件路径及内容摘要
+- 用户需要确认是‘继续’还是‘修改’
+- 确认‘继续’，执行下一阶段的命令，如果‘修改’，则根据用户输入内容进入执行，然后再让用户确认
 
 #### 5.2 单一模式 (Single Mode)
 一个文档生成一个独立的 Skill。适用于处理互不相关的文档。
@@ -237,7 +284,7 @@ Options: "获取 DeepSeek 的 api_key", "获取符合 OpenAI 规范的 LLM 的 b
 
 ### 第6步：询问是否加载到本地项目（推荐）
 
-在技能生成成功后，询问用户是否将生成的skill直接加载到当前项目的 `.opencode/skills` 目录下，以便立即使用。
+询问用户是否将生成的skill直接加载到当前项目的 `.opencode/skills` 目录下，以便立即使用。
 
 **询问方式**：
 ```
@@ -274,6 +321,12 @@ node ../skill-sync/scripts/push.js <生成的技能路径>
 - `--llm-api-key`
 - `--llm-model`
 - `--llm-base-url`
+
+**Merge 模式参数**：
+- `--stage {1,2,3}`：指定执行阶段（必需，仅 Merge 模式有效）
+  - 1：提取故障案例
+  - 2：生成故障模式
+  - 3：生成 Skill
 
 ## 支持的输入格式
 
@@ -385,10 +438,11 @@ skill-name/
 4. **OpenCode 检测**：在 OpenCode 平台使用 node scripts/opencode-model-detector.cjs
 5. **首次使用**：先安装依赖，再获取配置，最后生成技能
 6. **交互询问**：如果用户没有提供文档，主动询问输入来源
-7. **批量处理**：使用`--concurrency`提高效率，但不要超过5
-8. **质量控制**：通过`--quality-threshold`调整生成质量（0.5-0.9）
-9. **输出检查**：生成后检查SKILL.md的description是否符合预期
-10. **本地加载**：生成后主动询问用户是否加载到 .opencode/skills 目录，方便立即使用
+7. **分阶段执行**：Merge 模式需按顺序执行 stage 1 → stage 2 → stage 3，每个阶段完成后需用户查看和确认结果，用户同意后执行下一步
+8. **批量处理**：使用`--concurrency`提高效率，但不要超过5
+9. **质量控制**：通过`--quality-threshold`调整生成质量（0.5-0.9）
+10. **输出检查**：生成后检查SKILL.md的description是否符合预期
+11. **本地加载**：生成后主动询问用户是否加载到 .opencode/skills 目录，方便立即使用
 
 ## 参考资源
 

@@ -457,14 +457,18 @@ version: {metadata.version}
         return True
 
     async def generate_skill_with_llm(
-        self, pattern: FailurePattern, output_dir: Path
+        self,
+        failure_pattern: FailurePattern,
+        output_dir: Path,
+        existing_skill_md_file: Optional[str] = None,
     ) -> bool:
         """
         Generate SKILL.md and references/pattern-detail.md using LLM based on FailurePattern.
 
         Args:
-            pattern: The FailurePattern object.
+            failure_pattern: The FailurePattern object.
             output_dir: The directory to save the generated files.
+            existing_skill_md_file: Path to existing SKILL.md for incremental update
 
         Returns:
             True if successful, False otherwise.
@@ -480,18 +484,39 @@ version: {metadata.version}
             prompt_template = prompt_path.read_text(encoding="utf-8")
 
             # 2. Prepare pattern_json
-            pattern_json = pattern.model_dump_json(indent=2)
+            pattern_json = failure_pattern.model_dump_json(indent=2)
 
-            # 3. Format prompt and append instruction
+            # 3. 处理已有 SKILL.md
+            existing_skill_context = ""
+            if existing_skill_md_file and os.path.exists(existing_skill_md_file):
+                with open(existing_skill_md_file, "r", encoding="utf-8") as f:
+                    existing_skill_md = f.read()
+
+                # 限制已有内容的长度，避免超出token限制
+                if len(existing_skill_md) > 15000:
+                    existing_skill_md = existing_skill_md[:15000] + "\n\n...(truncated)"
+
+                existing_skill_context = f"""
+
+Existing SKILL.md (for reference/incremental update):
+{existing_skill_md}
+
+Please consider this existing skill when generating a new one.
+If user asks to update it, preserve structure and apply modifications.
+If user asks to regenerate it, create a new version based on the pattern.
+"""
+
+            # 4. Format prompt and append instruction
             prompt = prompt_template.format(pattern_json=pattern_json)
-            prompt += "\n\nIMPORTANT: Please separate the content of 'SKILL.md' and 'references/pattern-detail.md' with the delimiter `===FILE_SEPARATOR===`. Output 'SKILL.md' first."
+            prompt += existing_skill_context
+            prompt += "\n\nIMPORTANT: Please separate content of 'SKILL.md' and 'references/pattern-detail.md' with delimiter `===FILE_SEPARATOR===`. Output 'SKILL.md' first."
 
-            # 4. Call LLM
-            print(f"🤖 Generating skill from pattern {pattern.pattern_id}...")
+            # 6. Call LLM
+            print(f"🤖 Generating skill from pattern {failure_pattern.pattern_id}...")
             response = await self.llm.ainvoke([{"role": "user", "content": prompt}])
             content = response.content
 
-            # 5. Parse response
+            # 7. Parse response
             parts = content.split("===FILE_SEPARATOR===")
 
             skill_md_content = ""
@@ -507,7 +532,7 @@ version: {metadata.version}
                 skill_md_content = content.strip()
                 pattern_detail_content = ""
 
-            # 6. Write files
+            # 8. Write files
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -655,14 +680,14 @@ I've scraped documentation and organized it into reference files. Your job is to
 
 CURRENT TIME: {timestamp}
 CURRENT SKILL.MD:
-{'```markdown' if current_skill_md else '(none - create from scratch)'}
-{current_skill_md or 'No existing SKILL.md'}
-{'```' if current_skill_md else ''}
+{"```markdown" if current_skill_md else "(none - create from scratch)"}
+{current_skill_md or "No existing SKILL.md"}
+{"```" if current_skill_md else ""}
 
 SCRIPTS REFERENCES.MD:
-{'```markdown' if scripts_references else '(none - create from scratch)'}
-{scripts_references or 'No existing references.md'}
-{'```' if scripts_references else ''}
+{"```markdown" if scripts_references else "(none - create from scratch)"}
+{scripts_references or "No existing references.md"}
+{"```" if scripts_references else ""}
 {script_refs_note}
 
 {file_paths_section}

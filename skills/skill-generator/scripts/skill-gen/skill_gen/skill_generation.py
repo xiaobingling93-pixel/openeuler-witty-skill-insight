@@ -187,7 +187,9 @@ async def _compute_v2_skill_md_name(output_dir: str, pattern: FailurePattern) ->
 
 
 async def extract_cases_from_docs(
-    doc_paths: List[str], output_dir: str
+    doc_paths: List[str],
+    output_dir: str,
+    existing_cases_file: Optional[str] = None,
 ) -> Tuple[List[FailureCase], List[dict], List[str]]:
     """
     Extract FailureCase objects and assets from multiple documents.
@@ -195,6 +197,7 @@ async def extract_cases_from_docs(
     Args:
         doc_paths: List of document paths to process.
         output_dir: Directory to save extracted assets.
+        existing_cases_file: Path to existing failure_cases.yaml for incremental update
 
     Returns:
         Tuple containing:
@@ -287,6 +290,22 @@ async def extract_cases_from_docs(
 
         # 2. Extract failure case
         console.print(f"正在从 {doc_path} 提取故障案例...")
+
+        # 加载已有案例（用于增量更新）
+        existing_cases = []
+        if existing_cases_file and os.path.exists(existing_cases_file):
+            try:
+                with open(existing_cases_file, "r", encoding="utf-8") as f:
+                    import yaml
+
+                    cases_data = yaml.safe_load(f)
+                    existing_cases = [FailureCase(**data) for data in cases_data]
+                console.print(
+                    f"[yellow]已加载 {len(existing_cases)} 个已有案例[/yellow]"
+                )
+            except Exception as e:
+                console.print(f"[yellow]加载已有案例失败: {e}[/yellow]")
+
         extractor = CaseExtractor()
         extracted_cases = await extractor.extract(text)
 
@@ -309,13 +328,35 @@ async def generate_pattern_from_cases(
     failure_cases: List[FailureCase],
     existing_pattern: Optional[FailurePattern] = None,
     general_experiences: List[GeneralExperience] = [],
+    existing_pattern_file: Optional[str] = None,
 ) -> FailurePattern:
     """
     Generate or update a FailurePattern from a list of FailureCases.
+
+    Args:
+        failure_cases: List of failure cases
+        existing_pattern: Existing pattern to merge into (deprecated, use existing_pattern_file)
+        general_experiences: General experiences
+        existing_pattern_file: Path to existing failure_pattern.yaml for incremental update
+
+    Returns:
+        FailurePattern object
     """
     console = Console()
     if not failure_cases:
         raise ValueError("failure_cases 不能为空")
+
+    # 加载已有模式文件（优先于 existing_pattern 参数）
+    if existing_pattern_file and os.path.exists(existing_pattern_file):
+        try:
+            with open(existing_pattern_file, "r", encoding="utf-8") as f:
+                pattern_data = yaml.safe_load(f)
+                existing_pattern = FailurePattern(**pattern_data)
+            console.print(
+                f"[yellow]已加载已有模式: {existing_pattern.pattern_name}[/yellow]"
+            )
+        except Exception as e:
+            console.print(f"[yellow]加载已有模式文件失败: {e}[/yellow]")
 
     if not existing_pattern:
         inducer = PatternInducer()
@@ -328,7 +369,7 @@ async def generate_pattern_from_cases(
     current_pattern = existing_pattern
     for i, case in enumerate(failure_cases):
         console.print(
-            f"正在增量合并第 {i+1}/{len(failure_cases)} 个案例: {case.title}..."
+            f"正在增量合并第 {i + 1}/{len(failure_cases)} 个案例: {case.title}..."
         )
         try:
             current_pattern = await merger.merge(
@@ -471,6 +512,260 @@ async def generate_skill_v2(
         # We don't raise here to allow partial success (YAML saved) if MD fails
 
     return skill
+
+
+def save_failure_cases_to_file(
+    failure_cases: List[FailureCase], target_dir: str
+) -> None:
+    """保存故障案例到文件"""
+    ref_dir = os.path.join(target_dir, "references")
+    os.makedirs(ref_dir, exist_ok=True)
+
+    cases_file = os.path.join(ref_dir, "failure_cases.yaml")
+    with open(cases_file, "w", encoding="utf-8") as f:
+        cases_data = [case.model_dump(mode="json") for case in failure_cases]
+        yaml.dump(cases_data, f, allow_unicode=True, sort_keys=False)
+
+
+def load_failure_cases_from_file(target_dir: str) -> List[FailureCase]:
+    """从文件加载故障案例"""
+    cases_file = os.path.join(target_dir, "references", "failure_cases.yaml")
+    if not os.path.exists(cases_file):
+        return []
+
+    with open(cases_file, "r", encoding="utf-8") as f:
+        cases_data = yaml.safe_load(f)
+        return [FailureCase(**data) for data in cases_data]
+
+
+def save_failure_pattern_to_file(
+    failure_pattern: FailurePattern, target_dir: str
+) -> None:
+    """保存故障模式到文件"""
+    ref_dir = os.path.join(target_dir, "references")
+    os.makedirs(ref_dir, exist_ok=True)
+
+    pattern_file = os.path.join(ref_dir, "failure_pattern.yaml")
+    with open(pattern_file, "w", encoding="utf-8") as f:
+        pattern_data = failure_pattern.model_dump(mode="json")
+        yaml.dump(pattern_data, f, allow_unicode=True, sort_keys=False)
+
+
+def load_failure_pattern_from_file(target_dir: str) -> Optional[FailurePattern]:
+    """从文件加载故障模式"""
+    pattern_file = os.path.join(target_dir, "references", "failure_pattern.yaml")
+    if not os.path.exists(pattern_file):
+        return None
+
+    with open(pattern_file, "r", encoding="utf-8") as f:
+        pattern_data = yaml.safe_load(f)
+        return FailurePattern(**pattern_data)
+
+
+def save_metadata_to_file(
+    generated_scripts: List[dict], reference_files: List[str], target_dir: str
+) -> None:
+    """保存元数据到文件"""
+    metadata = {
+        "generated_scripts": generated_scripts,
+        "reference_files": reference_files,
+    }
+
+    metadata_file = os.path.join(target_dir, "references", "assets_metadata.json")
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
+def load_metadata_from_file(target_dir: str) -> Tuple[List[dict], List[str]]:
+    """从文件加载元数据"""
+    metadata_file = os.path.join(target_dir, "references", "assets_metadata.json")
+    if not os.path.exists(metadata_file):
+        return [], []
+
+    with open(metadata_file, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+        return metadata.get("generated_scripts", []), metadata.get(
+            "reference_files", []
+        )
+
+
+def run_merge_stage_1(
+    all_files: List[str],
+    target_dir: str,
+    general_experiences: List[GeneralExperience],
+) -> None:
+    """阶段1：提取故障案例"""
+    console = Console()
+    console.print("[bold cyan]阶段1：提取故障案例[/bold cyan]")
+
+    # 确定已有案例文件路径
+    existing_cases_file = os.path.join(target_dir, "references", "failure_cases.yaml")
+
+    try:
+        # 提取案例
+        failure_cases, generated_scripts, reference_files = asyncio.run(
+            extract_cases_from_docs(
+                all_files,
+                target_dir,
+                existing_cases_file=existing_cases_file
+                if os.path.exists(existing_cases_file)
+                else None,
+            )
+        )
+
+        if not failure_cases:
+            console.print("[bold red]未提取到故障案例[/bold red]")
+            return
+
+        # 立即保存到文件
+        save_failure_cases_to_file(failure_cases, target_dir)
+        save_metadata_to_file(generated_scripts, reference_files, target_dir)
+
+        console.print(
+            f"[green]已保存 {len(failure_cases)} 个故障案例到 failure_cases.yaml[/green]"
+        )
+        console.print(f"[green]阶段1完成[/green]")
+
+    except Exception as e:
+        console.print(f"[bold red]阶段1执行失败: {e}[/bold red]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def run_merge_stage_2(
+    target_dir: str,
+    general_experiences: List[GeneralExperience],
+) -> None:
+    """阶段2：生成故障模式"""
+    console = Console()
+    console.print("[bold cyan]阶段2：生成故障模式[/bold cyan]")
+
+    # 从文件加载已有案例
+    failure_cases = load_failure_cases_from_file(target_dir)
+    if not failure_cases:
+        console.print(
+            "[bold red]未找到 failure-failure_cases.yaml，请先执行阶段1[/bold red]"
+        )
+        sys.exit(1)
+
+    # 确定已有模式文件路径
+    existing_pattern_file = os.path.join(
+        target_dir, "references", "failure_pattern.yaml"
+    )
+
+    try:
+        # 生成模式
+        failure_pattern = asyncio.run(
+            generate_pattern_from_cases(
+                failure_cases,
+                existing_pattern=None,
+                general_experiences=general_experiences,
+                existing_pattern_file=existing_pattern_file
+                if os.path.exists(existing_pattern_file)
+                else None,
+            )
+        )
+
+        # 立即保存到文件
+        save_failure_pattern_to_file(failure_pattern, target_dir)
+
+        console.print(f"[green]已保存故障模式到 failure_pattern.yaml[/green]")
+        console.print(f"[green]阶段2完成[/green]")
+
+    except Exception as e:
+        console.print(f"[bold red]阶段2执行失败: {e}[/bold red]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def run_merge_stage_3(
+    target_dir: str,
+) -> None:
+    """阶段3：生成Skill"""
+    console = Console()
+    console.print("[bold cyan]阶段3：生成Skill[/bold cyan]")
+
+    # 从文件加载已有模式
+    failure_pattern = load_failure_pattern_from_file(target_dir)
+    if not failure_pattern:
+        console.print("[bold red]未找到 failure_pattern.yaml，请先执行阶段2[/bold red]")
+        sys.exit(1)
+
+    # 从文件加载元数据
+    generated_scripts, reference_files = load_metadata_from_file(target_dir)
+
+    # 确定已有SKILL.md文件路径
+    existing_skill_md_file = os.path.join(target_dir, "SKILL.md")
+
+    try:
+        # 从文件加载故障案例
+        failure_cases = load_failure_cases_from_file(target_dir)
+        if not failure_cases:
+            console.print(
+                "[bold red]未找到 failure_cases.yaml，请先执行阶段1[/bold red]"
+            )
+            sys.exit(1)
+
+        # 创建 Skill 对象
+        skill = Skill(
+            failure_pattern=failure_pattern,
+            failure_cases=failure_cases,
+            general_experiences=[],
+        )
+
+        # 生成 SKILL.md
+        output_md = os.path.join(target_dir, "SKILL.md")
+        console.print(f"正在生成 Skill 文档: {output_md}")
+
+        try:
+            # 使用 SkillFormatter 模板生成 Skill
+            console.print(
+                f"[bold cyan]使用 SkillFormatter 模板生成 Skill...[/bold cyan]"
+            )
+            formatter = SkillFormatter()
+            md_content = formatter.render(
+                skill,
+                generated_scripts=generated_scripts,
+                reference_files=reference_files,
+            )
+            with open(output_md, "w", encoding="utf-8") as f:
+                f.write(md_content)
+            console.print(f"[bold green]SKILL.md (Template) 生成成功！[/bold green]")
+
+            # 设置正确的 skill 名称
+            expected_name = asyncio.run(
+                _compute_v2_skill_md_name(target_dir, skill.failure_pattern)
+            )
+            _ensure_skill_md_name(output_md, expected_name)
+
+            # 清理临时文件
+            console.print(f"[bold cyan]清理临时文件...[/bold cyan]")
+            adaptor = DeepSeekAdaptor()
+            try:
+                adaptor.cleanup_intermediate_files(pathlib.Path(target_dir))
+                console.print(f"[green]临时文件清理完成[/green]")
+            except Exception as e:
+                console.print(f"[yellow]清理临时文件失败: {e}[/yellow]")
+
+        except Exception as e:
+            console.print(f"[bold red]生成 Markdown 失败: {e}[/bold red]")
+            import traceback
+
+            traceback.print_exc()
+            raise e
+
+        console.print(f"[green]阶段3完成[/green]")
+
+    except Exception as e:
+        console.print(f"[bold red]阶段3执行失败: {e}[/bold red]")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def skill_seekers_gen(user_case_file, skill_name, quality_threshold: float = 0.5):
@@ -814,8 +1109,7 @@ async def _build_entries_from_dir(root_path: str) -> List[Dict[str, str]]:
             "skill_name": skill_name,
         }
         console.print(
-            f"[green]生成 skill 名称[/green]: [bold]{skill_name}[/bold] "
-            f"← {pdf_path}"
+            f"[green]生成 skill 名称[/green]: [bold]{skill_name}[/bold] ← {pdf_path}"
         )
         return entry
 
@@ -998,6 +1292,7 @@ def run_skill_generation(
     general_experience_path: Optional[str] = None,
     pattern_file_path: Optional[str] = None,
     existing_pattern_file_path: Optional[str] = None,
+    stage: int = 1,
 ) -> None:
     """
     统一入口函数，供外部（如 app.py）调用：
@@ -1015,6 +1310,7 @@ def run_skill_generation(
     :param mode: 生成模式，"single" (默认) 或 "merge"
     :param general_experience_path: 通用经验文件路径
     :param pattern_file_path: 故障模式 YAML 文件路径
+    :param stage: 从指定阶段开始执行（仅Merge模式有效）：1=提取案例，2=生成模式，3=生成Skill
     """
     console = Console()
 
@@ -1131,27 +1427,47 @@ def run_skill_generation(
     # Check if we are in "Merge" mode
     if mode == "merge":
         console.print("[bold magenta]进入合并模式 (Merge Mode)[/bold magenta]")
-        # Gather all files
-        all_files = []
-        for p in input_paths:
-            if os.path.isdir(p):
-                # Scan directory
-                for root, _, files in os.walk(p):
-                    for f in files:
-                        if f.lower().endswith((".pdf", ".md", ".txt")):
-                            all_files.append(os.path.join(root, f))
-            elif os.path.isfile(p):
-                all_files.append(p)
-            elif p.startswith(("http://", "https://")):
-                # URL not supported for merge mode yet efficiently, or treat as file
-                # For now, append
-                all_files.append(p)
-            else:
-                console.print(f"[yellow]跳过无效路径: {p}[/yellow]")
 
-        if not all_files:
-            console.print("[bold red]未找到有效输入文件进行合并。[/bold red]")
-            return
+        # 收集文件
+        all_files = []
+        if stage == 1:  # 只有阶段1需要收集文件
+            for p in input_paths:
+                if os.path.isdir(p):
+                    # Scan directory
+                    for root, _, files in os.walk(p):
+                        for f in files:
+                            if f.lower().endswith((".pdf", ".md", ".txt")):
+                                all_files.append(os.path.join(root, f))
+                elif os.path.isfile(p):
+                    all_files.append(p)
+                elif p.startswith(("http://", "https://")):
+                    all_files.append(p)
+                else:
+                    console.print(f"[yellow]跳过无效路径: {p}[/yellow]")
+
+            if not all_files:
+                console.print("[bold red]未找到有效输入文件进行合并。[/bold red]")
+                return
+
+            console.print(f"将合并以下 {len(all_files)} 个文档生成一个 Skill...")
+
+        # 确定输出目录
+        if not output_path:
+            custom_skill_paths = os.getenv("CUSTOM_SKILL_PATHS", "output_skills")
+            skill_name = skill_name or "merged_skill"
+            target_dir = os.path.join(custom_skill_paths, skill_name)
+        else:
+            target_dir = output_path
+
+        # 根据stage参数调用对应的阶段函数
+        if stage == 1:
+            run_merge_stage_1(all_files, target_dir, general_experiences)
+        elif stage == 2:
+            run_merge_stage_2(target_dir, general_experiences)
+        elif stage == 3:
+            run_merge_stage_3(target_dir)
+
+        return
 
         console.print(f"将合并以下 {len(all_files)} 个文档生成一个 Skill...")
 
