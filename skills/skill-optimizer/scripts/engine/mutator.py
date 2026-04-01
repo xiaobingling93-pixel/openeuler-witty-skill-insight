@@ -110,9 +110,57 @@ class DiagnosticMutator:
         )
 
         # Define Tools as Closures to capture new_genome state
-        # The update_skill_content tool has been removed.
-        # Massive strings inside JSON tool calls (like a 6KB SKILL.md) cause frequent token errors and infinite agent retry loops (resulting in the 300000ms bash timeout).
-        # We now instruct the model to output the updated SKILL.md in plain markdown block in its response.
+        
+        skill_md_chunks: dict[int, str] = {}
+        skill_md_total_ref: list[int] = [0]
+        
+        def reset_skill_md_chunks():
+            skill_md_chunks.clear()
+            skill_md_total_ref[0] = 0
+
+        def get_missing_skill_md_chunks() -> list[int]:
+            total = skill_md_total_ref[0]
+            if total <= 0:
+                return []
+            return [i for i in range(1, total + 1) if i not in skill_md_chunks]
+
+        def assemble_skill_md_from_chunks() -> str | None:
+            total = skill_md_total_ref[0]
+            if total <= 0:
+                return None
+            missing = get_missing_skill_md_chunks()
+            if missing:
+                return None
+            return "".join(skill_md_chunks[i] for i in range(1, total + 1))
+
+        @tool
+        def write_skill_md_chunk(index: int, total: int, content: str):
+            """
+            Write a chunk of the updated SKILL.md.
+            MUST be used to output the SKILL.md instead of placing it in the final message.
+            
+            Args:
+                index: 1-based index of this chunk (e.g. 1, 2, 3...)
+                total: Total number of chunks you plan to write. Must be consistent across calls.
+                content: The raw markdown content of this chunk (NO markdown fences around it).
+            """
+            if total < 1:
+                return "Error: total must be >= 1"
+            if index < 1 or index > total:
+                return f"Error: index must be between 1 and {total}"
+                
+            if skill_md_total_ref[0] == 0:
+                skill_md_total_ref[0] = total
+            elif skill_md_total_ref[0] != total:
+                return f"Error: total changed from {skill_md_total_ref[0]} to {total}. Please use consistent total."
+                
+            if index in skill_md_chunks:
+                logger.warning(f"Chunk {index} already received. Model attempted to overwrite.")
+                return f"Warning: Chunk {index} already received. Skip it and write the missing chunks."
+                
+            skill_md_chunks[index] = content
+            received = sorted(list(skill_md_chunks.keys()))
+            return f"Successfully saved chunk {index}/{total}. Received so far: {received}"
 
         @tool
         def record_fix(diagnosis_index: int, description: str, changed_sections: str):
@@ -155,6 +203,7 @@ class DiagnosticMutator:
             return f"File {path} not found."
 
         tools = [
+            write_skill_md_chunk,
             write_auxiliary_file,
             delete_auxiliary_file,
             record_fix,
@@ -170,17 +219,8 @@ class DiagnosticMutator:
             )
             return set(matches)
 
-        def apply_skill_md_from_text(text: str) -> bool:
-            extracted = self._extract_markdown(text)
-            if len(extracted) > 100 and ("# Role" in extracted or "name:" in extracted):
-                new_genome.raw_text = extracted
-                try:
-                    parsed = SkillGenome.from_markdown(extracted)
-                    new_genome.name = parsed.name
-                except Exception:
-                    pass
-                return True
-            return False
+        # Remove apply_skill_md_from_text as it is no longer used in Agent mode
+
 
         def run_agent_round(round_prompt: str) -> tuple[str, object | None]:
             callbacks = []
@@ -261,37 +301,7 @@ class DiagnosticMutator:
             return False
 
         def retry_for_completeness(previous_extracted: str) -> bool:
-            retries = int(os.getenv("SKILL_OPT_MUTATOR_TRUNCATION_RETRY", "1") or "1")
-            if retries <= 0:
-                return False
-            if not looks_truncated(previous_extracted):
-                return False
-            parent_headings = extract_headings(parent.raw_text)
-            required = [h for h in parent_headings if "步骤" in h] or [
-                h for h in parent_headings if h.startswith("## ")
-            ]
-            required = [h for h in required if h not in {"## File references"}]
-            required_str = os.linesep.join(f"- {h}" for h in required[:60])
-            for _ in range(retries):
-                round_prompt = (
-                    "Your previous SKILL.md output was incomplete.\n"
-                    "Output the COMPLETE updated SKILL.md as a single ```markdown``` code block.\n"
-                    "Do not summarize, do not truncate, do not use placeholders.\n"
-                    "Keep the original structure and include the following headings:\n"
-                    f"{required_str}\n\n"
-                    "Use the following as the source of truth:\n\n"
-                    f"{prompt}\n"
-                )
-                agent_text, agent_msg = run_agent_round(round_prompt)
-                if not agent_text:
-                    continue
-                self._log_skill_md_extraction_diagnostics(
-                    extracted=self._extract_markdown(agent_text),
-                    raw_text=agent_text,
-                    last_msg=agent_msg,
-                )
-                if apply_skill_md_from_text(agent_text) and not looks_truncated(new_genome.raw_text):
-                    return True
+            # Removed in favor of chunk missing retry logic
             return False
 
         try:
@@ -313,23 +323,39 @@ class DiagnosticMutator:
                     "Requirements:\n"
                     "- For EACH missing file, call write_auxiliary_file(path, content, summary).\n"
                     "- Keep SKILL.md content consistent; only adjust references if necessary.\n"
-                    "- Output the COMPLETE updated SKILL.md as a ```markdown``` code block.\n\n"
+                    "- Write the COMPLETE updated SKILL.md using write_skill_md_chunk(index, total, content).\n\n"
                     f"# Missing files:\n{os.linesep.join(f'- {p}' for p in missing)}\n\n"
                     f"# Current SKILL.md:\n```markdown\n{new_genome.raw_text}\n```\n"
                 )
 
+                reset_skill_md_chunks()
                 last_agent_text, last_agent_msg = run_agent_round(round_prompt)
-                if not last_agent_text:
-                    logger.warning("Mutator agent produced no textual output.")
-                    break
-                self._log_skill_md_extraction_diagnostics(
-                    extracted=self._extract_markdown(last_agent_text),
-                    raw_text=last_agent_text,
-                    last_msg=last_agent_msg,
-                )
+                
+                # Check for missing chunks and retry
+                chunk_retries = int(os.getenv("SKILL_OPT_MUTATOR_CHUNK_RETRY", "2") or "2")
+                for _ in range(chunk_retries):
+                    missing_chunks = get_missing_skill_md_chunks()
+                    if not missing_chunks:
+                        break
+                    
+                    missing_str = ", ".join(str(i) for i in missing_chunks[:100])
+                    followup_prompt = (
+                        "The SKILL.md update is incomplete. Chunks " + missing_str + " were not received.\n"
+                        "Please write ONLY the missing chunks using write_skill_md_chunk.\n"
+                        "Do NOT rewrite chunks that were already received.\n"
+                        "Ensure the total number of chunks remains " + str(skill_md_total_ref[0]) + ".\n"
+                    )
+                    run_agent_round(followup_prompt)
 
-                if apply_skill_md_from_text(last_agent_text):
-                    retry_for_completeness(new_genome.raw_text)
+                assembled = assemble_skill_md_from_chunks()
+                if assembled:
+                    new_genome.raw_text = assembled
+                    try:
+                        parsed = SkillGenome.from_markdown(assembled)
+                        new_genome.name = parsed.name
+                    except Exception:
+                        pass
+                        
                     referenced = extract_referenced_paths(new_genome.raw_text)
                     missing = sorted(
                         [p for p in referenced if p not in new_genome.files]
@@ -340,9 +366,11 @@ class DiagnosticMutator:
                         f"Mutator agent referenced missing auxiliary files: {missing}"
                     )
                 else:
-                    logger.warning(
-                        "Mutator agent did not provide a valid SKILL.md markdown block."
+                    logger.error(
+                        f"Mutator agent failed to provide all SKILL.md chunks. Missing: {get_missing_skill_md_chunks()}"
                     )
+                    # Log raw output for debugging
+                    logger.info(f"Raw agent output for failed chunks: {last_agent_text}")
                     break
 
             if missing:
@@ -389,13 +417,12 @@ class DiagnosticMutator:
     def _extract_markdown(self, text: str) -> str:
         """
         Extract content from markdown code blocks if present anywhere in the text.
-        Handles nested code blocks by extracting the first matching block.
+        Handles nested code blocks by extracting the best matching block using a line-by-line state machine.
         """
-        import re
-
         text = text.strip()
 
         def looks_like_skill_md(body: str) -> bool:
+            import re
             b = body.lstrip()
             if b.startswith("---") and re.search(r"(?m)^name:\s*\S+", b):
                 return True
@@ -414,14 +441,40 @@ class DiagnosticMutator:
             return False
 
         blocks: list[tuple[str, str]] = []
-        for m in re.finditer(
-            r"```(?P<lang>[A-Za-z0-9_-]+)?\s*\n(?P<body>.*?)(?:\n)?```",
-            text,
-            re.DOTALL,
-        ):
-            lang = (m.group("lang") or "").strip().lower()
-            body = (m.group("body") or "").strip()
-            blocks.append((lang, body))
+        
+        # State machine parsing
+        in_block = False
+        fence_char = ""
+        fence_len = 0
+        lang_tag = ""
+        current_lines: list[str] = []
+        
+        import re
+        lines = text.splitlines()
+        for line in lines:
+            if not in_block:
+                m = re.match(r"^\s*(?P<fence>`{3,}|~{3,})(?:\s*(?P<lang>[a-zA-Z0-9_-]+))?\s*$", line)
+                if m:
+                    in_block = True
+                    fence_str = m.group("fence")
+                    fence_char = fence_str[0]
+                    fence_len = len(fence_str)
+                    lang_tag = (m.group("lang") or "").strip().lower()
+                    current_lines = []
+            else:
+                m = re.match(r"^\s*(?P<fence>`{3,}|~{3,})\s*$", line)
+                if m:
+                    fence_str = m.group("fence")
+                    # Closing fence must use the same character and be AT LEAST as long as opening fence
+                    if fence_str[0] == fence_char and len(fence_str) >= fence_len:
+                        blocks.append((lang_tag, "\n".join(current_lines)))
+                        in_block = False
+                        continue
+                current_lines.append(line)
+        
+        # If text ends while still in_block, save it as truncated block
+        if in_block:
+            blocks.append((lang_tag, "\n".join(current_lines)))
 
         best_body = ""
         best_score = -10_000
@@ -445,10 +498,7 @@ class DiagnosticMutator:
         if best_body and looks_like_skill_md(best_body):
             return best_body.strip()
 
-        match = re.search(r"```markdown\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-
+        # Fallback: if no valid blocks found, just return text (might be plain text response)
         return text.strip()
 
     def _log_skill_md_extraction_diagnostics(
@@ -507,15 +557,27 @@ class DiagnosticMutator:
 
         if not raw_text:
             return False
-        if raw_text.count("```") % 2 == 1:
-            return True
-        if re.search(r"```markdown\b", raw_text, re.IGNORECASE) and not re.search(
-            r"```markdown\b[\s\S]*?```",
-            raw_text,
-            re.IGNORECASE,
-        ):
-            return True
-        return False
+            
+        in_block = False
+        fence_char = ""
+        fence_len = 0
+        
+        for line in raw_text.splitlines():
+            if not in_block:
+                m = re.match(r"^\s*(?P<fence>`{3,}|~{3,})(?:\s*[a-zA-Z0-9_-]+)?\s*$", line)
+                if m:
+                    in_block = True
+                    fence_str = m.group("fence")
+                    fence_char = fence_str[0]
+                    fence_len = len(fence_str)
+            else:
+                m = re.match(r"^\s*(?P<fence>`{3,}|~{3,})\s*$", line)
+                if m:
+                    fence_str = m.group("fence")
+                    if fence_str[0] == fence_char and len(fence_str) >= fence_len:
+                        in_block = False
+        
+        return in_block
 
     @staticmethod
     def _has_suspicious_colon_leadin(md: str) -> bool:
