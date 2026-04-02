@@ -2269,6 +2269,17 @@ export default function Dashboard() {
                             </button>
                         </div>
                     )}
+                    
+                    <div style={{ marginTop: '2rem', marginBottom: '0.5rem', height: '1px', background: 'linear-gradient(to right, transparent, rgba(56, 189, 248, 0.5), transparent)' }}></div>
+                    
+                    {/* Promotion Section */}
+                    <div style={{ marginTop: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.6 }}>
+                            <a href="https://atomgit.com/openeuler/witty-skill-insight" target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                                你的 ⭐ Star 是前进动力，📢 Issue 使产品更稳，🚀 PR 让功能更强。
+                            </a>
+                        </p>
+                    </div>
                 </>
             )}
 
@@ -3170,18 +3181,13 @@ export default function Dashboard() {
                                             )}
                                         </button>
                                     </div>
-                                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#bae6fd', lineHeight: 1.5 }}>
-                                            <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br />
-                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export SKILL_INSIGHT_API_KEY={localApiKey}</code>
-                                        </p>
-                                    </div>
                                 </div>
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                                     No API Key found.
                                 </div>
                             )}
+
 
                         </div>
 
