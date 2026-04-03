@@ -101,7 +101,8 @@ export async function PATCH(request: Request) {
                 task_id: task_id || undefined,
                 upload_id: upload_id || undefined,
                 query: newQuery.trim(),
-                skip_evaluation: true
+                skip_evaluation: true,
+                force_query_update: true
             });
 
             return NextResponse.json({

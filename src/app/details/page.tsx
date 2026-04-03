@@ -744,13 +744,36 @@ function DetailPage() {
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
 
     useEffect(() => {
-        if (expandTaskId && !sessionData[expandTaskId]) {
-            fetch(`/api/session?taskId=${expandTaskId}`)
-                .then(res => res.ok ? res.json() : { error: 'Error' })
-                .then(json => setSessionData(prev => ({ ...prev, [expandTaskId]: json })))
-                .catch(() => setSessionData(prev => ({ ...prev, [expandTaskId]: { error: 'Fetch failed' } })));
+        const tid = currentRecord
+            ? (currentRecord.task_id || currentRecord.upload_id || `temp-${currentRecord.timestamp}`)
+            : null;
+        if (!tid) return;
+        if (sessionData[tid]) return;
+
+        const tryIds: string[] = [tid];
+        if (/^ses_/.test(tid) && /-\d+$/.test(tid)) {
+            tryIds.push(tid.replace(/-\d+$/, ''));
         }
-    }, [expandTaskId]);
+
+        const fetchOnce = (id: string) =>
+            fetch(`/api/session?taskId=${encodeURIComponent(id)}`)
+                .then(res => res.ok ? res.json() : { error: 'Error' })
+                .then(json => {
+                    if (json && !json.error) return json;
+                    throw new Error(json?.error || 'Error');
+                });
+
+        (async () => {
+            for (const id of tryIds) {
+                try {
+                    const json = await fetchOnce(id);
+                    setSessionData(prev => ({ ...prev, [tid]: json }));
+                    return;
+                } catch {}
+            }
+            setSessionData(prev => ({ ...prev, [tid]: { error: 'Fetch failed' } }));
+        })();
+    }, [currentRecord]);
 
     useEffect(() => {
         let url = '/api/data?';
@@ -869,7 +892,33 @@ function DetailPage() {
             });
         }
 
-        return data;
+        const byTask = new Map<string, any>();
+        for (const item of data) {
+            const key = item.task_id || item.upload_id || '';
+            if (!key) continue;
+
+            const prev = byTask.get(key);
+            if (!prev) {
+                byTask.set(key, item);
+                continue;
+            }
+
+            const prevTs = new Date(prev.timestamp).getTime();
+            const curTs = new Date(item.timestamp).getTime();
+            if (curTs > prevTs) {
+                byTask.set(key, item);
+                continue;
+            }
+            if (curTs === prevTs) {
+                const prevLen = String(prev.final_result || '').length;
+                const curLen = String(item.final_result || '').length;
+                if (curLen > prevLen) {
+                    byTask.set(key, item);
+                }
+            }
+        }
+
+        return Array.from(byTask.values());
     }, [allData, timeFilter, selectedLabels, selectedModels]);
 
     const compareDimData = useMemo(() => {
@@ -2638,7 +2687,7 @@ function DetailPage() {
 
                     return (
                         <div
-                            key={itemTaskId}
+                            key={item.upload_id || itemTaskId}
                             className="record-row"
                             data-timestamp={new Date(item.timestamp).getTime()}
                             data-label={item.label || '__no_label__'}
