@@ -70,23 +70,59 @@ export interface ConfigItem {
     key_actions?: { content: string; weight: number }[];
 }
 
+function normalizeQueryForMatch(input: string): string {
+    let s = input.trim();
+    const pairs: Array<[string, string]> = [
+        ['"', '"'],
+        ["'", "'"],
+        ['“', '”'],
+        ['‘', '’'],
+        ['`', '`'],
+        ['《', '》'],
+        ['（', '）'],
+        ['(', ')'],
+        ['【', '】'],
+        ['[', ']'],
+        ['{', '}'],
+        ['<', '>'],
+    ];
+
+    for (let i = 0; i < 6; i++) {
+        const before = s;
+        s = s.trim();
+        for (const [l, r] of pairs) {
+            if (s.startsWith(l) && s.endsWith(r) && s.length >= l.length + r.length + 1) {
+                s = s.slice(l.length, -r.length);
+            }
+        }
+        if (s === before) break;
+    }
+
+    s = s.replace(/[\s"'“”‘’`。.]/g, '');
+    s = s.replace(/^[\s.,，。!?！？;；:：、·…]+|[\s.,，。!?！？;；:：、·…]+$/g, '');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+}
+
 export function findBestMatchConfig(configs: ConfigItem[], userQuery: string | undefined): ConfigItem | undefined {
     if (!userQuery) return undefined;
     
-    const trimmedUserQuery = userQuery.trim();
+    const trimmedUserQuery = normalizeQueryForMatch(userQuery);
+    if (!trimmedUserQuery) return undefined;
     
     const matchingConfigs = configs
         .filter(c => c.query && c.query.trim())
         .filter(c => {
-            const trimmedConfigQuery = c.query.trim();
+            const trimmedConfigQuery = normalizeQueryForMatch(c.query);
+            if (!trimmedConfigQuery) return false;
             return trimmedUserQuery.endsWith(trimmedConfigQuery);
         });
     
     if (matchingConfigs.length === 0) return undefined;
     
     return matchingConfigs.reduce((best, current) => {
-        const bestLen = best.query.trim().length;
-        const currentLen = current.query.trim().length;
+        const bestLen = normalizeQueryForMatch(best.query).length;
+        const currentLen = normalizeQueryForMatch(current.query).length;
         return currentLen > bestLen ? current : best;
     });
 }
@@ -126,8 +162,53 @@ export async function readRecords(user?: string, filters?: { query?: string; tas
     }
 
     const records = await db.findExecutions(where, { timestamp: 'desc' });
+    const byTaskId = new Map<string, any[]>();
+    for (const r of records) {
+        const tid = r.taskId || null;
+        if (!tid) continue;
+        if (!byTaskId.has(tid)) byTaskId.set(tid, []);
+        byTaskId.get(tid)!.push(r);
+    }
 
-    return records.map((r: any) => {
+    const keepIds = new Set<string>();
+    for (const [tid, group] of byTaskId.entries()) {
+        if (group.length === 1) {
+            keepIds.add(group[0].id);
+            continue;
+        }
+
+        const canonical = group.find((x: any) => x.id === tid);
+        if (canonical) {
+            keepIds.add(canonical.id);
+            continue;
+        }
+
+        const sorted = group.slice().sort((a: any, b: any) => {
+            const ta = new Date(a.timestamp).getTime();
+            const tb = new Date(b.timestamp).getTime();
+            if (tb !== ta) return tb - ta;
+            const la = String(a.finalResult || '').length;
+            const lb = String(b.finalResult || '').length;
+            return lb - la;
+        });
+        keepIds.add(sorted[0].id);
+    }
+
+    const filtered = records.filter((r: any) => {
+        if (!r.taskId) return true;
+        return keepIds.has(r.id);
+    });
+
+    for (const [tid, group] of byTaskId.entries()) {
+        if (group.length <= 1) continue;
+        for (const r of group) {
+            if (!keepIds.has(r.id)) {
+                db.deleteExecution(r.id).catch(() => {});
+            }
+        }
+    }
+
+    return filtered.map((r: any) => {
         const model = r.model ?? null;
         const pricingResult = model ? getModelPricing(model) : null;
         const pricing = pricingResult?.pricing ?? null;
@@ -231,7 +312,22 @@ export function readEvaluationResults(): Record<string, string> {
 
 export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ success: boolean; record: ExecutionRecord }> {
     const id = data.upload_id || data.task_id;
-    const recordId = id || crypto.randomUUID();
+    let recordId = id || crypto.randomUUID();
+
+    if (data.task_id) {
+        try {
+            const where: any = { taskId: data.task_id };
+            if (data.framework) where.framework = data.framework;
+            const existingByTask = await db.findExecutions(where, { timestamp: 'desc' });
+            if (existingByTask && existingByTask.length > 0 && existingByTask[0]?.id) {
+                const exact = existingByTask.find((x: any) => x.id === data.task_id);
+                const canonicalId = (exact && exact.id) ? exact.id : existingByTask[0].id;
+                if (canonicalId !== recordId) {
+                    recordId = canonicalId;
+                }
+            }
+        } catch {}
+    }
 
     let existingRecord: ExecutionRecord | null = null;
     const dbRecord = await db.findExecutionById(recordId);
@@ -250,6 +346,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             final_result: dbRecord.finalResult || undefined,
             skill: dbRecord.skill || undefined,
             skills: dbRecord.skills ? JSON.parse(dbRecord.skills) : undefined,
+            invokedSkills: dbRecord.invokedSkills ? (() => { try { return JSON.parse(dbRecord.invokedSkills); } catch { return undefined; } })() : undefined,
             is_skill_correct: dbRecord.isSkillCorrect || false,
             is_answer_correct: dbRecord.isAnswerCorrect || false,
             answer_score: dbRecord.answerScore || undefined,
@@ -259,7 +356,7 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             skill_issues: dbRecord.skillIssues ? JSON.parse(dbRecord.skillIssues) : undefined,
             label: dbRecord.label || undefined,
             user: dbRecord.user || undefined,
-            skill_version: dbRecord.skillVersion || undefined,
+            skill_version: dbRecord.skillVersion ?? undefined,
             expected_skill_version: dbRecord.expectedSkillVersion ?? null,
             skill_recall_rate: dbRecord.skillRecallRate ?? null,
             model: dbRecord.model || undefined,
@@ -283,7 +380,20 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         targetRecord.timestamp = data.timestamp;
     }
 
+    const allowQueryOverwrite = !!data.force_query_update;
+    const existingQuery = typeof existingRecord?.query === 'string' ? existingRecord.query.trim() : '';
+    const incomingQuery = typeof data.query === 'string' ? data.query.trim() : '';
+
     targetRecord = { ...targetRecord, ...data };
+    if (existingQuery && !allowQueryOverwrite) {
+        targetRecord.query = existingQuery;
+    } else if (!existingQuery && incomingQuery) {
+        targetRecord.query = incomingQuery;
+    } else if (typeof targetRecord.query === 'string' && !targetRecord.query.trim()) {
+        targetRecord.query = undefined;
+    } else if (typeof targetRecord.query === 'string') {
+        targetRecord.query = targetRecord.query.trim();
+    }
     if (!targetRecord.upload_id && targetRecord.task_id) targetRecord.upload_id = targetRecord.task_id;
     if (!targetRecord.task_id && targetRecord.upload_id) targetRecord.task_id = targetRecord.upload_id;
     targetRecord.upload_id = recordId;
@@ -335,8 +445,9 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         const matchedConfig = findBestMatchConfig(configs, targetRecord.query);
 
         if (matchedConfig) {
-            const invokedSkillsWithVersion = targetRecord.invokedSkills || [];
-            const invokedSkillsFallback = (targetRecord.skills || []).map(name => ({ name, version: null as number | null }));
+            const invokedSkillsWithVersion = Array.isArray(targetRecord.invokedSkills) ? targetRecord.invokedSkills : [];
+            const skillsFallback = Array.isArray(targetRecord.skills) ? targetRecord.skills : [];
+            const invokedSkillsFallback = skillsFallback.map(name => ({ name, version: null as number | null }));
 
             const expectedSkillsList = matchedConfig.expectedSkills || [];
             
@@ -570,7 +681,44 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         }
     });
 
+    if (data.upload_id && data.task_id && data.upload_id !== recordId) {
+        try {
+            const dup = await db.findExecutionById(data.upload_id);
+            if (dup && dup.taskId === data.task_id) {
+                await db.deleteExecution(data.upload_id);
+            }
+        } catch {}
+    }
+
     if (targetRecord.task_id && targetRecord.interactions) {
+        const incomingInteractions = typeof targetRecord.interactions === 'string'
+            ? (() => { try { return JSON.parse(targetRecord.interactions); } catch { return []; } })()
+            : targetRecord.interactions;
+
+        let mergedInteractions = incomingInteractions;
+        try {
+            const existingSession = await db.findSessionByTaskId(targetRecord.task_id);
+            const existingInteractions = existingSession?.interactions
+                ? (() => { try { return JSON.parse(existingSession.interactions as string); } catch { return []; } })()
+                : [];
+
+            if (Array.isArray(existingInteractions) && existingInteractions.length > 0) {
+                if (!Array.isArray(incomingInteractions) || incomingInteractions.length < existingInteractions.length) {
+                    mergedInteractions = existingInteractions;
+                } else {
+                    mergedInteractions = incomingInteractions.map((it: any, idx: number) => {
+                        const prev = existingInteractions[idx];
+                        const contentEmpty = it?.content === '' || it?.content == null;
+                        const prevContentOk = typeof prev?.content === 'string' && prev.content.length > 0;
+                        if (contentEmpty && prevContentOk && prev?.role === it?.role) {
+                            return { ...it, content: prev.content };
+                        }
+                        return it;
+                    });
+                }
+            }
+        } catch {}
+
         await db.upsertSession(
             targetRecord.task_id,
             {
@@ -579,14 +727,14 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                 label: targetRecord.label,
                 user: targetRecord.user,
                 model: targetRecord.model,
-                interactions: typeof targetRecord.interactions === 'string' ? targetRecord.interactions : JSON.stringify(targetRecord.interactions)
+                interactions: JSON.stringify(mergedInteractions)
             },
             {
                 query: targetRecord.query,
                 label: targetRecord.label,
                 user: targetRecord.user,
                 model: targetRecord.model,
-                interactions: typeof targetRecord.interactions === 'string' ? targetRecord.interactions : JSON.stringify(targetRecord.interactions)
+                interactions: JSON.stringify(mergedInteractions)
             }
         );
     }
