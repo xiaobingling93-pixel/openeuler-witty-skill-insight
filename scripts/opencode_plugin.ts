@@ -21,6 +21,7 @@ let sessionStore = new Map();
 let uploadedSessions = new Map(); // sessionId -> uploaded message count
 let sessionGraph = new Map(); // parent_id -> [child_ids]
 let pendingChildSessions = new Map(); // child_id -> {parent_id, data}
+let lastDeltaByPartField = new Map();
 
 const STORE_PATH = path.join(os.homedir(), '.opencode', 'witty_plugin_session_store.json');
 
@@ -45,22 +46,93 @@ function loadStore() {
             const fileData = fs.readFileSync(STORE_PATH, 'utf8');
             if (!fileData.trim()) return;
             const data = JSON.parse(fileData);
-            if (data.sessionStore) sessionStore = new Map(data.sessionStore);
-            if (data.uploadedSessions) {
-                let map = new Map();
-                for (const x of data.uploadedSessions) {
-                    if (Array.isArray(x) && typeof x[1] === 'number') {
-                        map.set(x[0], x[1]); // our new format [sessionId, count]
-                    } else {
-                        const sid = Array.isArray(x) ? x[0] : x;
-                        map.set(sid, 0); // old backward compatiability safely resets count to 0
+            
+            // Merge sessionStore: disk entries fill in gaps, but don't overwrite in-memory entries
+            if (data.sessionStore) {
+                const diskStore = new Map(data.sessionStore);
+                for (const [msgId, entry] of diskStore.entries()) {
+                    if (!sessionStore.has(msgId)) {
+                        if (entry.parts && !Array.isArray(entry.parts) && typeof entry.parts === 'object' && !(entry.parts instanceof Map)) {
+                             entry.parts = new Map(Object.entries(entry.parts));
+                        } else if (Array.isArray(entry.parts)) {
+                             entry.parts = new Map(entry.parts);
+                        } else if (!entry.parts) {
+                             entry.parts = new Map();
+                        }
+                        
+                        if (entry.toolParts && !Array.isArray(entry.toolParts) && typeof entry.toolParts === 'object' && !(entry.toolParts instanceof Map)) {
+                             entry.toolParts = new Map(Object.entries(entry.toolParts));
+                        } else if (Array.isArray(entry.toolParts)) {
+                             entry.toolParts = new Map(entry.toolParts);
+                        } else if (!entry.toolParts) {
+                             entry.toolParts = new Map();
+                        }
+
+                        sessionStore.set(msgId, entry);
                     }
                 }
-                uploadedSessions = map;
             }
-            if (data.sessionGraph) sessionGraph = new Map(data.sessionGraph);
-            if (data.pendingChildSessions) pendingChildSessions = new Map(data.pendingChildSessions);
-            logDebug(`Loaded store: ${sessionStore.size} messages`);
+            
+            // Merge uploadedSessions: keep the "newer" signature between memory and disk
+            if (data.uploadedSessions) {
+                for (const x of data.uploadedSessions) {
+                    const sid = Array.isArray(x) ? x[0] : x;
+                    const diskVal = Array.isArray(x) ? x[1] : 0;
+
+                    const normalize = (v) => {
+                        if (typeof v === 'number') return { count: v, lastAssistantLen: 0, lastTs: 0 };
+                        if (v && typeof v === 'object') {
+                            return {
+                                count: Number(v.count || 0),
+                                lastAssistantLen: Number(v.lastAssistantLen || 0),
+                                lastTs: Number(v.lastTs || 0)
+                            };
+                        }
+                        return { count: 0, lastAssistantLen: 0, lastTs: 0 };
+                    };
+
+                    const memSig = normalize(uploadedSessions.get(sid));
+                    const diskSig = normalize(diskVal);
+
+                    const diskNewer =
+                        diskSig.count > memSig.count ||
+                        (diskSig.count === memSig.count && diskSig.lastAssistantLen > memSig.lastAssistantLen) ||
+                        (diskSig.count === memSig.count && diskSig.lastAssistantLen === memSig.lastAssistantLen && diskSig.lastTs > memSig.lastTs);
+
+                    if (diskNewer) {
+                        uploadedSessions.set(sid, diskVal);
+                    } else if (!uploadedSessions.has(sid)) {
+                        uploadedSessions.set(sid, memSig);
+                    }
+                }
+            }
+            
+            // Merge sessionGraph: union child lists
+            if (data.sessionGraph) {
+                const diskGraph = new Map(data.sessionGraph);
+                for (const [parentId, childIds] of diskGraph.entries()) {
+                    if (!sessionGraph.has(parentId)) {
+                        sessionGraph.set(parentId, childIds);
+                    } else {
+                        const existing = sessionGraph.get(parentId);
+                        for (const cid of childIds) {
+                            if (!existing.includes(cid)) existing.push(cid);
+                        }
+                    }
+                }
+            }
+            
+            // Merge pendingChildSessions
+            if (data.pendingChildSessions) {
+                const diskPending = new Map(data.pendingChildSessions);
+                for (const [childId, childData] of diskPending.entries()) {
+                    if (!pendingChildSessions.has(childId)) {
+                        pendingChildSessions.set(childId, childData);
+                    }
+                }
+            }
+            
+            logDebug(`Loaded store (merged): ${sessionStore.size} messages`);
         }
     } catch(e) {
         logDebug("Store read err: " + e.message);
@@ -70,8 +142,17 @@ function loadStore() {
 function saveStore() {
     try {
         cleanupOldSessions();
+        
+        // Merge with disk state to prevent concurrent process data loss.
+        // loadStore() uses merge semantics (won't overwrite in-memory entries).
+        loadStore();
+        
         const data = {
-            sessionStore: Array.from(sessionStore.entries()),
+            sessionStore: Array.from(sessionStore.entries()).map(([k, v]) => [k, {
+                ...v,
+                parts: v.parts instanceof Map ? Array.from(v.parts.entries()) : (v.parts || []),
+                toolParts: v.toolParts instanceof Map ? Array.from(v.toolParts.entries()) : (v.toolParts || [])
+            }]),
             uploadedSessions: Array.from(uploadedSessions.entries()),
             sessionGraph: Array.from(sessionGraph.entries()),
             pendingChildSessions: Array.from(pendingChildSessions.entries()),
@@ -181,11 +262,12 @@ function loadConfiguration() {
 
 function collectSessionMessages(sessionId) {
     const messages = [];
+    logDebug(`collectSessionMessages: scanning ${sessionStore.size} entries for session ${sessionId}`);
     for (const [mid, entry] of sessionStore.entries()) {
         if (entry.info.sessionID === sessionId) {
             // Calculate latency for this message if possible from parts
             let partBasedDuration = 0;
-            if (entry.parts.size > 0) {
+            if (entry.parts instanceof Map && entry.parts.size > 0) {
                 const parts = Array.from(entry.parts.values()).map(p => p.time?.start || 0).filter(t => t > 0).sort((a,b)=>a-b);
                 if (parts.length >= 1) {
                     const start = parts[0];
@@ -194,9 +276,13 @@ function collectSessionMessages(sessionId) {
                 }
             }
 
+            const role = entry.info.role || 'unknown';
+            const content = entry.content || entry.info.content || "";
+            logDebug(`Found message in store: id=${mid}, role=${role}, content_len=${content.length}`);
+
             messages.push({
-                role: entry.info.role || 'unknown',
-                content: entry.content || entry.info.content || "",
+                role: role,
+                content: content,
                 tool_calls: entry.info.tool_calls || entry.info.toolCalls,
                 function_call: entry.info.function_call || entry.info.functionCall,
                 usage: entry.info.usage || entry.info.tokens,
@@ -208,6 +294,7 @@ function collectSessionMessages(sessionId) {
             });
         }
     }
+    logDebug(`collectSessionMessages: collected ${messages.length} messages for ${sessionId}`);
     return messages;
 }
 
@@ -316,23 +403,6 @@ export default async function WittySkillInsightPlugin(input) {
            // Attempt to find session ID in various places
            const sessionId = event.session_id || event.properties?.sessionID || event.payload?.session_id;
 
-           // 0. Handle session.created events to establish parent-child relationships
-           if (event.type === 'session.created') {
-               const sessionInfo = event.properties?.info || event.payload?.info;
-               if (sessionInfo && sessionInfo.id && sessionInfo.parentID) {
-                   const childId = sessionInfo.id;
-                   const parentId = sessionInfo.parentID;
-                   
-                   if (!sessionGraph.has(parentId)) {
-                       sessionGraph.set(parentId, []);
-                   }
-                   if (!sessionGraph.get(parentId).includes(childId)) {
-                       sessionGraph.get(parentId).push(childId);
-                       logDebug(`Session created: ${childId} is child of ${parentId}`);
-                   }
-               }
-           }
-
            // 1. Accumulate Message Metadata
            if (event.type === 'message.created' || event.type === 'message.updated') {
              let info = (event.payload && event.payload.message) || (event.properties && event.properties.info);
@@ -371,6 +441,8 @@ export default async function WittySkillInsightPlugin(input) {
                         });
                   }
                   const entry = sessionStore.get(msgId);
+                  if (!(entry.parts instanceof Map)) entry.parts = new Map(Array.isArray(entry.parts) ? entry.parts : []);
+                  if (entry.toolParts && !(entry.toolParts instanceof Map)) entry.toolParts = new Map(Array.isArray(entry.toolParts) ? entry.toolParts : []);
                   
                   // Store part
                   const partId = part.id || `temp_${Date.now()}_${Math.random()}`;
@@ -476,22 +548,81 @@ export default async function WittySkillInsightPlugin(input) {
               }
           }
 
+          if (event.type === 'message.part.delta') {
+              const props = event.properties || event.payload || {};
+              const msgId = props.messageID || props.message_id;
+              const partId = props.partID || props.part_id;
+              const field = props.field;
+              const delta = props.delta;
+
+              if (msgId && partId && field && typeof delta === 'string') {
+                  if (!sessionStore.has(msgId)) {
+                      sessionStore.set(msgId, {
+                          info: { sessionID: sessionId },
+                          parts: new Map(),
+                          toolParts: new Map(),
+                          content: ''
+                      });
+                  }
+
+                  const entry = sessionStore.get(msgId);
+                  if (!(entry.parts instanceof Map)) entry.parts = new Map(Array.isArray(entry.parts) ? entry.parts : []);
+
+                  const dedupeKey = `${msgId}:${partId}:${field}`;
+                  const lastDelta = lastDeltaByPartField.get(dedupeKey);
+                  if (lastDelta !== delta) {
+                      lastDeltaByPartField.set(dedupeKey, delta);
+                      if (lastDeltaByPartField.size > 5000) {
+                          for (const k of lastDeltaByPartField.keys()) {
+                              lastDeltaByPartField.delete(k);
+                              if (lastDeltaByPartField.size <= 4000) break;
+                          }
+                      }
+
+                      const existingPart = entry.parts.get(partId) || {
+                          id: partId,
+                          messageID: msgId,
+                          sessionID: sessionId,
+                          type: 'text'
+                      };
+                      const prev = typeof existingPart[field] === 'string' ? existingPart[field] : '';
+                      existingPart[field] = prev + delta;
+                      entry.parts.set(partId, existingPart);
+
+                      let full = "";
+                      const sortedParts = Array.from(entry.parts.values()).sort((a, b) => {
+                          const ta = a.time?.start || (a.meta && a.meta.start) || 0;
+                          const tb = b.time?.start || (b.meta && b.meta.start) || 0;
+                          return ta - tb;
+                      });
+
+                      for (const p of sortedParts) {
+                          if (p.text) full += p.text;
+                          else if (p.content) full += p.content;
+                      }
+                      entry.content = full;
+                  }
+              }
+          }
+
            // 3. Upload on Session Idle
            if (event.type === "session.idle") {
                if (!sessionId || !sessionId.startsWith("ses")) return;
 
-               // Check if this is a child session (has parent_id or is in sessionGraph)
-               const parentId = event.parent_id || event.properties?.parentID || event.payload?.parent_id;
-               
-               // Also check if this session is registered as a child in sessionGraph
-               let foundParentId = parentId;
-               if (!foundParentId) {
-                   for (const [potentialParent, childIds] of sessionGraph.entries()) {
-                       if (childIds.includes(sessionId)) {
-                           foundParentId = potentialParent;
-                           logDebug(`Found parent ${foundParentId} for for child ${sessionId} from sessionGraph`);
-                           break;
-                       }
+               // Reload store from disk to pick up any data written by
+               // concurrent child processes (e.g. opencode run executed
+               // from within the opencode interactive interface).
+               loadStore();
+
+               // Only treat a session as "child" when it was detected via Task tool
+               // (i.e. registered in sessionGraph). Do NOT rely on event.parentID because
+               // nested `opencode run ...` can also set parentID and we want both sessions uploaded.
+               let foundParentId = null;
+               for (const [potentialParent, childIds] of sessionGraph.entries()) {
+                   if (childIds.includes(sessionId)) {
+                       foundParentId = potentialParent;
+                       logDebug(`Found parent ${foundParentId} for for child ${sessionId} from sessionGraph`);
+                       break;
                    }
                }
                
@@ -649,12 +780,38 @@ export default async function WittySkillInsightPlugin(input) {
                   timestamp: new Date().toISOString()
               };
 
-              const prevUploadCount = uploadedSessions.get(sessionId) || 0;
-              if (messages.length <= prevUploadCount) {
-                  logDebug(`Session ${sessionId} already uploaded with ${prevUploadCount} msgs (cur: ${messages.length}), skipping.`);
+              let lastTs = 0;
+              for (const m of messages) {
+                  const t1 = toMsTimestamp(m.timestamp) || 0;
+                  const t2 = toMsTimestamp(m.timeInfo?.completed) || 0;
+                  const t3 = toMsTimestamp(m.timeInfo?.created) || 0;
+                  lastTs = Math.max(lastTs, t1, t2, t3);
+              }
+              const lastAssistantLen = (lastAssistantContent || '').length;
+
+              const normalize = (v) => {
+                  if (typeof v === 'number') return { count: v, lastAssistantLen: 0, lastTs: 0 };
+                  if (v && typeof v === 'object') {
+                      return {
+                          count: Number(v.count || 0),
+                          lastAssistantLen: Number(v.lastAssistantLen || 0),
+                          lastTs: Number(v.lastTs || 0)
+                      };
+                  }
+                  return { count: 0, lastAssistantLen: 0, lastTs: 0 };
+              };
+
+              const prevSig = normalize(uploadedSessions.get(sessionId));
+              const shouldSkip =
+                  messages.length <= prevSig.count &&
+                  lastAssistantLen <= prevSig.lastAssistantLen &&
+                  lastTs <= prevSig.lastTs;
+
+              if (shouldSkip) {
+                  logDebug(`Session ${sessionId} already uploaded (count=${prevSig.count}, lastAssistantLen=${prevSig.lastAssistantLen}, lastTs=${prevSig.lastTs}) (cur: count=${messages.length}, lastAssistantLen=${lastAssistantLen}, lastTs=${lastTs}), skipping.`);
                   return;
               }
-              uploadedSessions.set(sessionId, messages.length);
+              uploadedSessions.set(sessionId, { count: messages.length, lastAssistantLen, lastTs });
 
               const body = JSON.stringify(payload);
               logDebug(`Payload Body Size: ${Buffer.byteLength(body)} bytes`);
