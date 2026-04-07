@@ -1,15 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  basePath: process.env.NEXT_PUBLIC_URL_PREFIX || '',
   output: 'standalone',
   serverExternalPackages: ["node-fetch", "pg"],
   experimental: {
       serverActions: {
-          allowedOrigins: ["*"] // Allow cross-origin requests in dev
+          allowedOrigins: ["*"] //
       }
   },
   async rewrites() {
-    return [
+    const urlPrefix = process.env.NEXT_PUBLIC_URL_PREFIX || '';
+    
+    const rewrites = [
       {
         source: '/v1/traces',
         destination: '/api/otel/v1/traces',
@@ -23,6 +26,15 @@ const nextConfig: NextConfig = {
         destination: '/api/otel/v1/metrics',
       },
     ];
+
+    if (urlPrefix) {
+      rewrites.push({
+        source: `${urlPrefix}/api/:path*`,
+        destination: '/api/:path*',
+      });
+    }
+    
+    return rewrites;
   },
 };
 

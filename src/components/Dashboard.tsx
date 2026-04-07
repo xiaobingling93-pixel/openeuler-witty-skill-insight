@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { SkillLinks } from './SkillLink';
+import { useTheme } from '@/lib/theme-context';
+import { apiFetch, getApiUrl } from '@/lib/api';
 
 
 // --- Types ---
@@ -78,7 +80,8 @@ interface AvgComparison {
     [key: string]: string | number | null;
 }
 
-const COLORS = ['#38bdf8', '#f472b6', '#4ade80', '#fbbf24', '#818cf8', '#f87171'];
+const COLORS = ['#2563eb', '#db2777', '#16a34a', '#d97706', '#7c3aed', '#dc2626'];
+const basePath = process.env.NEXT_PUBLIC_URL_PREFIX || '';
 
 // --- Helpers ---
 const formatLatency = (ms: number) => {
@@ -250,16 +253,16 @@ const CustomTooltip = ({ content }: { content: React.ReactNode }) => {
                     top: coords.top - 8,
                     left: coords.left,
                     transform: 'translate(-50%, -100%)',
-                    background: '#0f172a',
-                    border: '1px solid #334155',
-                    color: '#f1f5f9',
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    color: '#334155',
                     padding: '6px 10px',
                     borderRadius: '4px',
                     whiteSpace: 'pre-wrap',
                     minWidth: '200px',
                     textAlign: 'left',
                     zIndex: 9999,
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                     pointerEvents: 'none'
                 }}>
                     {content}
@@ -273,7 +276,7 @@ const CustomTooltip = ({ content }: { content: React.ReactNode }) => {
                         height: 0,
                         borderLeft: '4px solid transparent',
                         borderRight: '4px solid transparent',
-                        borderTop: '4px solid #334155'
+                        borderTop: '4px solid #e2e8f0'
                     }} />
                 </div>,
                 document.body
@@ -290,7 +293,9 @@ import { getFilteredSteps } from '@/lib/guide-config';
 
 // --- Main Component ---
 export default function Dashboard() {
-    const { user, apiKey } = useAuth(); // Destructure apiKey from useAuth
+    const { user, apiKey } = useAuth();
+    const [isOrgMode, setIsOrgMode] = useState(false);
+    const { theme, toggleTheme, isDark } = useTheme();
     const [localApiKey, setLocalApiKey] = useState<string | null>(null);
 
     const {
@@ -311,9 +316,33 @@ export default function Dashboard() {
                 guideState.completedSteps,
                 guideState.skippedSteps
             );
-            setGuideSteps(filtered);
+            
+            // Generate setup commands for welcome step
+            const stepsWithCommands = filtered.map(step => {
+                if (step.id === 'welcome' && apiKey && typeof window !== 'undefined') {
+                    const host = window.location.host;
+                    const protocol = window.location.protocol;
+                    const baseUrl = `${protocol}//${host}`;
+                    const setupUrl = getApiUrl('/api/setup');
+                    
+                    const linuxCommand = `curl -sSf "${baseUrl}${setupUrl}" | bash`;
+                    const windowsCommand = `irm "${baseUrl}${setupUrl}" | iex`;
+                    
+                    return {
+                        ...step,
+                        setupCommands: {
+                            linux: linuxCommand,
+                            windows: windowsCommand,
+                        },
+                        apiKey: apiKey,
+                    };
+                }
+                return step;
+            });
+            
+            setGuideSteps(stepsWithCommands);
         }
-    }, [guideState]);
+    }, [guideState, apiKey]);
 
     // Setup local state for apiKey after mount to avoid hydration mismatch
     useEffect(() => {
@@ -331,7 +360,7 @@ export default function Dashboard() {
     // Fetch fresh API Key from DB when user modal opens to ensure accuracy
     useEffect(() => {
         if (showUserModal && user) {
-            fetch('/api/auth/apikey', {
+            apiFetch('/api/auth/apikey', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: user })
@@ -442,7 +471,7 @@ export default function Dashboard() {
 
             setSettingsStatus({ type: 'success', msg: 'Testing connection...' }); // reuse success style for info
 
-            const testRes = await fetch('/api/settings/test', {
+            const testRes = await apiFetch('/api/settings/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(testPayload)
@@ -471,7 +500,7 @@ export default function Dashboard() {
                 user: user
             };
 
-            const res = await fetch('/api/settings', {
+            const res = await apiFetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload)
@@ -494,10 +523,12 @@ export default function Dashboard() {
         }
     };
 
+    const isDefaultConfig = (configId: string) => configId.startsWith('default_');
+
     const activateConfig = async (id: string) => {
         const payload = { activeConfigId: id, configs: allConfigs };
         const finalPayload = { settings: payload, user };
-        await fetch('/api/settings', {
+        await apiFetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(finalPayload)
@@ -513,7 +544,7 @@ export default function Dashboard() {
 
         const payload = { activeConfigId: newActive, configs: newConfigs };
         const finalPayload = { settings: payload, user };
-        await fetch('/api/settings', {
+        await apiFetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(finalPayload)
@@ -524,6 +555,13 @@ export default function Dashboard() {
 
     useEffect(() => {
         fetchServerSettings();
+    }, []);
+
+    useEffect(() => {
+        apiFetch('/api/config/status?check_org=true')
+            .then(res => res.json())
+            .then(data => setIsOrgMode(data.org_mode || false))
+            .catch(() => {});
     }, []);
 
     // When modal opens, if we have configs, show list. if empty, show edit new.
@@ -578,7 +616,7 @@ export default function Dashboard() {
             const queryUser = user;
 
             const url = queryUser ? `/api/data?user=${encodeURIComponent(queryUser)}` : '/api/data';
-            const res = await fetch(url, { cache: 'no-store' });
+            const res = await apiFetch(url, { cache: 'no-store' });
             const d = await res.json();
             const cleanData = d
                 .filter((x: any) => x.query && x.query.trim() !== '') // 4. Filter empty queries
@@ -611,7 +649,7 @@ export default function Dashboard() {
 
     const fetchConfig = () => {
         if (!user) return;
-        fetch(`/api/config?user=${encodeURIComponent(user)}`)
+        apiFetch(`/api/config?user=${encodeURIComponent(user)}`)
             .then(res => res.json())
             .then(d => {
                 if (Array.isArray(d)) setConfigs(d);
@@ -622,7 +660,7 @@ export default function Dashboard() {
 
     const fetchSkills = () => {
         if (!user) return;
-        fetch(`/api/skills?user=${encodeURIComponent(user)}`)
+        apiFetch(`/api/skills?user=${encodeURIComponent(user)}`)
             .then(res => res.json())
             .then(d => {
                 if (Array.isArray(d)) setAvailableSkills(d);
@@ -634,7 +672,7 @@ export default function Dashboard() {
     const fetchServerSettings = useCallback(async () => {
         if (!user) return;
         try {
-            const res = await fetch(`/api/settings?user=${encodeURIComponent(user)}`);
+            const res = await apiFetch(`/api/settings?user=${encodeURIComponent(user)}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.configs) {
@@ -660,7 +698,7 @@ export default function Dashboard() {
     const handleDelete = async (record: Execution) => {
         if (!confirm('确定要删除这条记录吗?')) return;
         try {
-            const res = await fetch(`/api/data?user=${encodeURIComponent(user || '')}`, {
+            const res = await apiFetch(`/api/data?user=${encodeURIComponent(user || '')}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(record)
@@ -684,7 +722,7 @@ export default function Dashboard() {
                 (d.task_id === selectedRecord.task_id || d.upload_id === selectedRecord.upload_id) ? updatedRecord : d
             ));
 
-            const res = await fetch('/api/data', {
+            const res = await apiFetch('/api/data', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -718,7 +756,7 @@ export default function Dashboard() {
         });
 
         try {
-            const res = await fetch('/api/rejudge', {
+            const res = await apiFetch('/api/rejudge', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...record, currentUser: user })
@@ -781,7 +819,7 @@ export default function Dashboard() {
                 label: newLabel
             };
 
-            const res = await fetch('/api/data', {
+            const res = await apiFetch('/api/data', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -816,7 +854,7 @@ export default function Dashboard() {
     const pollConfigStatus = useCallback((configId: string) => {
         const poll = async () => {
             try {
-                const res = await fetch(`/api/config/status?id=${configId}`);
+                const res = await apiFetch(`/api/config/status?id=${configId}`);
                 if (!res.ok) return;
                 const data = await res.json();
 
@@ -897,9 +935,9 @@ export default function Dashboard() {
                     if (editingConfig.expectedSkills) {
                         formData.append('expectedSkills', JSON.stringify(editingConfig.expectedSkills));
                     }
-                    res = await fetch('/api/config/create', { method: 'POST', body: formData });
+                    res = await apiFetch('/api/config/create', { method: 'POST', body: formData });
                 } else {
-                    res = await fetch('/api/config/create', {
+                    res = await apiFetch('/api/config/create', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -934,7 +972,7 @@ export default function Dashboard() {
                 let newConfigs = [...configs];
                 newConfigs = newConfigs.map(c => c.id === editingConfig.id ? { ...c, ...editingConfig } as ConfigItem : c);
 
-                const res = await fetch('/api/config', {
+                const res = await apiFetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ configs: newConfigs, user })
@@ -959,7 +997,7 @@ export default function Dashboard() {
     const deleteConfig = async (id: string) => {
         if (!confirm('确定删除此配置?')) return;
         const newConfigs = configs.filter(c => c.id !== id);
-        const res = await fetch('/api/config', {
+        const res = await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ configs: newConfigs, user }) // Include user in the body
@@ -1258,12 +1296,12 @@ export default function Dashboard() {
             <div style={{ flex: 1, minHeight: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="shortQuery" stroke="#94a3b8" fontSize={11} angle={-20} textAnchor="end" height={60} />
-                        <YAxis stroke="#94a3b8" tickFormatter={yFormatter} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="shortQuery" stroke="var(--foreground-secondary)" fontSize={11} angle={-20} textAnchor="end" height={60} />
+                        <YAxis stroke="var(--foreground-secondary)" tickFormatter={yFormatter} />
                         <Tooltip
                             formatter={(val, name) => [val !== undefined ? (yFormatter ? yFormatter(val as number) : val + unit) : '-', name || '']}
-                            contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
+                            contentStyle={{ backgroundColor: 'var(--dropdown-bg)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
                         />
                         <Legend />
                         {frameworks.map((fw, i) => (
@@ -1284,7 +1322,7 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <h1 className="title" style={{ marginBottom: 0 }}>Skill-Insight</h1>
-                        <span style={{ fontSize: '0.8rem', color: '#94a3b8', letterSpacing: '1px' }}>智能体技能评估、分析与优化</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)', letterSpacing: '1px' }}>智能体技能评估、分析与优化</span>
                     </div>
 
                     {/* Main Navigation Tabs */}
@@ -1311,6 +1349,13 @@ export default function Dashboard() {
                 </div>
                 {activeTab === 'dashboard' && (
                     <div className="controls" style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                            className="theme-toggle-btn"
+                            onClick={toggleTheme}
+                            title={isDark ? '切换到浅色主题' : '切换到深色主题'}
+                        >
+                            {isDark ? '☀️' : '🌙'}
+                        </button>
                         <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
                             <option value="all">全部时间</option>
                             <option value="24h">24H</option>
@@ -1318,19 +1363,19 @@ export default function Dashboard() {
                             <option value="1h">1H</option>
                         </select>
                         {allConfigs.length > 0 ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #334155', borderRadius: '4px', padding: '4px 8px', background: '#0f172a' }}>
-                                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>模型:</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid var(--border)', borderRadius: '4px', padding: '4px 8px', background: 'var(--background-secondary)' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)' }}>模型:</span>
                                 <select
                                     value={activeConfigId || 'none'}
                                     onChange={(e) => activateConfig(e.target.value)}
-                                    style={{ background: 'transparent', color: '#e2e8f0', border: 'none', maxWidth: '140px', outline: 'none', cursor: 'pointer' }}
+                                    style={{ background: 'transparent', color: 'var(--foreground-secondary)', border: 'none', maxWidth: '140px', outline: 'none', cursor: 'pointer' }}
                                 >
                                     <option value="none">未配置模型</option>
                                     {allConfigs.map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                 </select>
-                                <div style={{ width: '1px', height: '14px', background: '#334155', margin: '0 4px' }}></div>
+                                <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 4px' }}></div>
                                 <button
                                     onClick={() => setShowSettingsModal(true)}
                                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0', fontSize: '1rem' }}
@@ -1345,8 +1390,8 @@ export default function Dashboard() {
                                 style={{
                                     padding: '4px 8px',
                                     background: 'transparent',
-                                    border: '1px solid #334155',
-                                    color: '#94a3b8'
+                                    border: '1px solid var(--border)',
+                                    color: 'var(--foreground-secondary)'
                                 }}
                                 onClick={() => setShowSettingsModal(true)}
                             >
@@ -1376,61 +1421,69 @@ export default function Dashboard() {
                         {!editingConfigId && (
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
-                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>管理模型配置</h3>
-                                    <button onClick={() => setShowSettingsModal(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+                                    <h3 style={{ margin: 0, color: '#1e293b' }}>管理模型配置</h3>
+                                    <button onClick={() => setShowSettingsModal(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
                                 </div>
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.5rem' }}>
-                                    {allConfigs.map(config => (
-                                        <div key={config.id} style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            padding: '10px',
-                                            background: activeConfigId === config.id ? 'rgba(59, 130, 246, 0.1)' : '#1e293b',
-                                            border: activeConfigId === config.id ? '1px solid #3b82f6' : '1px solid #334155',
-                                            borderRadius: '6px'
-                                        }}>
-                                            <div>
-                                                <div style={{ fontWeight: 'bold', color: activeConfigId === config.id ? '#60a5fa' : '#f1f5f9' }}>
-                                                    {config.name} {activeConfigId === config.id && '(Active)'}
+                                    {allConfigs.map(config => {
+                                        const isDefault = isDefaultConfig(config.id);
+                                        return (
+                                            <div key={config.id} style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                padding: '10px',
+                                                background: activeConfigId === config.id ? 'rgba(37, 99, 235, 0.1)' : '#f8fafc',
+                                                border: activeConfigId === config.id ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                                                borderRadius: '6px'
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 'bold', color: activeConfigId === config.id ? '#2563eb' : '#1e293b' }}>
+                                                        {config.name} {activeConfigId === config.id && '(Active)'}
+                                                        {isDefault && <span style={{ marginLeft: '8px', fontSize: '0.8rem', color: '#64748b' }}>📋 Default (Read-only)</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                                        {config.provider} • {config.model}
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                                                    {config.provider} • {config.model}
-                                                </div>
-                                            </div>
 
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                {activeConfigId !== config.id && (
-                                                    <button
-                                                        className="btn-secondary"
-                                                        style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                                                        onClick={() => activateConfig(config.id)}
-                                                    >
-                                                        Activate
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="btn-secondary"
-                                                    style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                                                    onClick={() => {
-                                                        setTempConfig({ ...config });
-                                                        setEditingConfigId(config.id);
-                                                        setSettingsStatus(null);
-                                                    }}
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    className="btn-secondary"
-                                                    style={{ padding: '4px 8px', fontSize: '0.8rem', color: '#f87171', borderColor: '#7f1d1d' }}
-                                                    onClick={() => deleteEvalConfig(config.id)}
-                                                >
-                                                    Del
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {activeConfigId !== config.id && (
+                                                        <button
+                                                            className="btn-secondary"
+                                                            style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                                                            onClick={() => activateConfig(config.id)}
+                                                        >
+                                                            Activate
+                                                        </button>
+                                                    )}
+                                                    {!isDefault && (
+                                                        <>
+                                                            <button
+                                                                className="btn-secondary"
+                                                                style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                                                                onClick={() => {
+                                                                    setTempConfig({ ...config });
+                                                                    setEditingConfigId(config.id);
+                                                                    setSettingsStatus(null);
+                                                                }}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                className="btn-secondary"
+                                                                style={{ padding: '4px 8px', fontSize: '0.8rem', color: '#dc2626', borderColor: '#f87171' }}
+                                                                onClick={() => deleteEvalConfig(config.id)}
+                                                            >
+                                                                Del
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 <button
@@ -1458,10 +1511,10 @@ export default function Dashboard() {
                         {editingConfigId && (
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
-                                    <h3 style={{ margin: 0, color: '#f1f5f9' }}>{editingConfigId === 'new' ? '新配置' : '编辑'}</h3>
+                                    <h3 style={{ margin: 0, color: '#1e293b' }}>{editingConfigId === 'new' ? '新配置' : '编辑'}</h3>
                                     <button
                                         onClick={() => setEditingConfigId(null)}
-                                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.9rem', cursor: 'pointer' }}
+                                        style={{ background: 'transparent', border: 'none', color: '#64748b', fontSize: '0.9rem', cursor: 'pointer' }}
                                     >
                                         Back to List
                                     </button>
@@ -1473,9 +1526,9 @@ export default function Dashboard() {
                                         padding: '10px',
                                         marginBottom: '1rem',
                                         borderRadius: '4px',
-                                        background: settingsStatus.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                                        border: `1px solid ${settingsStatus.type === 'success' ? '#4ade80' : '#f87171'}`,
-                                        color: settingsStatus.type === 'success' ? '#4ade80' : '#f87171',
+                                        background: settingsStatus.type === 'success' ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)',
+                                        border: `1px solid ${settingsStatus.type === 'success' ? '#16a34a' : '#dc2626'}`,
+                                        color: settingsStatus.type === 'success' ? '#16a34a' : '#dc2626',
                                         fontSize: '0.9rem'
                                     }}>
                                         {settingsStatus.msg}
@@ -1488,7 +1541,8 @@ export default function Dashboard() {
                                         placeholder="e.g. My DeepSeek, Company OpenAI Proxy"
                                         value={tempConfig.name || ''}
                                         onChange={e => setTempConfig({ ...tempConfig, name: e.target.value })}
-                                        style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
+                                        disabled={isDefaultConfig(editingConfigId)}
+                                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '4px' }}
                                     />
                                 </div>
 
@@ -1514,7 +1568,8 @@ export default function Dashboard() {
                                             }
                                             setTempConfig({ ...tempConfig, ...updates });
                                         }}
-                                        style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
+                                        disabled={isDefaultConfig(editingConfigId)}
+                                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '4px' }}
                                     >
                                         <option value="deepseek">DeepSeek (Official)</option>
                                         <option value="siliconflow">SiliconFlow (DeepSeek V3 High Speed)</option>
@@ -1531,12 +1586,11 @@ export default function Dashboard() {
                                         value={tempConfig.baseUrl || ''}
                                         onChange={e => {
                                             let val = e.target.value;
-                                            // Normalize: strip /chat/completions if user pasted full endpoint
-                                            // Keep /v1 suffix as it's required by many OpenAI-compatible APIs
                                             val = val.replace(/\/chat\/completions\/?$/, '');
                                             setTempConfig({ ...tempConfig, baseUrl: val });
                                         }}
-                                        style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
+                                        disabled={isDefaultConfig(editingConfigId)}
+                                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '4px' }}
                                     />
                                 </div>
 
@@ -1547,7 +1601,8 @@ export default function Dashboard() {
                                         placeholder="sk-..."
                                         value={tempConfig.apiKey || ''}
                                         onChange={e => setTempConfig({ ...tempConfig, apiKey: e.target.value })}
-                                        style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
+                                        disabled={isDefaultConfig(editingConfigId)}
+                                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '4px' }}
                                     />
                                 </div>
 
@@ -1557,23 +1612,26 @@ export default function Dashboard() {
                                         placeholder="e.g. deepseek-chat, gpt-4o"
                                         value={tempConfig.model || ''}
                                         onChange={e => setTempConfig({ ...tempConfig, model: e.target.value })}
-                                        style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', color: 'white', borderRadius: '4px' }}
+                                        disabled={isDefaultConfig(editingConfigId)}
+                                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '4px' }}
                                     />
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '2rem' }}>
                                     <button className="btn-secondary" onClick={() => setEditingConfigId(null)}>Cancel</button>
-                                    <button
-                                        className="btn-primary"
-                                        onClick={saveCurrentConfig}
-                                        disabled={isSavingSettings}
-                                        style={{ opacity: isSavingSettings ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                        {isSavingSettings && <span style={{
-                                            width: '12px', height: '12px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite'
-                                        }}></span>}
-                                        {isSavingSettings ? 'Testing & Saving...' : 'Test Connection & Save'}
-                                    </button>
+                                    {!isDefaultConfig(editingConfigId) && (
+                                        <button
+                                            className="btn-primary"
+                                            onClick={saveCurrentConfig}
+                                            disabled={isSavingSettings}
+                                            style={{ opacity: isSavingSettings ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            {isSavingSettings && <span style={{
+                                                width: '12px', height: '12px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite'
+                                            }}></span>}
+                                            {isSavingSettings ? 'Testing & Saving...' : 'Test Connection & Save'}
+                                        </button>
+                                    )}
                                 </div>
                             </>
                         )}
@@ -1611,31 +1669,31 @@ export default function Dashboard() {
                             return (
                                 <div className="card" key={fw} style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}>
                                     <div className="card-title" style={{ color: COLORS[idx % COLORS.length] }}>{fw}</div>
-                                    <div className="stat-value">{fwData.length} <small style={{ fontSize: '1rem', color: '#64748b' }}>执行数</small></div>
+                                    <div className="stat-value">{fwData.length} <small style={{ fontSize: '1rem', color: 'var(--foreground-muted)' }}>执行数</small></div>
                                     <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem' }}>
                                         {/* Latency */}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase' }}>时延</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f1f5f9' }}>{formatLatency(avgLat)}</span>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)', textTransform: 'uppercase' }}>时延</span>
+                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--foreground)' }}>{formatLatency(avgLat)}</span>
                                         </div>
                                         {/* Token */}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase' }}>TOKEN</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f1f5f9' }}>{formatTokens(Math.round(avgTok))}</span>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)', textTransform: 'uppercase' }}>TOKEN</span>
+                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--foreground)' }}>{formatTokens(Math.round(avgTok))}</span>
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px solid #334155', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem' }}>
+                                    <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.2rem' }}>
                                         {/* Accuracy */}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>准确率</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: !hasEvaluatedData ? '#94a3b8' : (avgScore > 0.8 ? '#4ade80' : '#fbbf24') }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)' }}>准确率</span>
+                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: !hasEvaluatedData ? 'var(--foreground-muted)' : (avgScore > 0.8 ? 'var(--success)' : 'var(--warning)') }}>
                                                 {hasEvaluatedData ? `${(avgScore * 100).toFixed(1)}%` : '--'}
                                             </span>
                                         </div>
                                         {/* Skill Recall Rate */}
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>技能召回率</span>
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fbbf24' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--foreground-secondary)' }}>技能召回率</span>
+                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--warning)' }}>
                                                 {skillRecallRate.toFixed(1)}%
                                             </span>
                                         </div>
@@ -1650,7 +1708,7 @@ export default function Dashboard() {
                     <div className="analysis-controls">
                         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                             {['latest_10', 'all', 'single'].map(m => (
-                                <label key={m} style={{ cursor: 'pointer', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <label key={m} style={{ cursor: 'pointer', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                     <input type="radio" checked={comparisonMode === m} onChange={() => setComparisonMode(m as any)} />
                                     {m === 'latest_10' ? '最新10问' : m === 'all' ? '所有' : '单问题'}
                                 </label>
@@ -1662,19 +1720,19 @@ export default function Dashboard() {
                             </select>
                         )}
 
-                        <div style={{ marginLeft: '10px', display: 'flex', gap: '8px', borderLeft: '1px solid #475569', paddingLeft: '10px' }}>
-                            <span style={{ color: '#94a3b8', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>分类:</span>
+                        <div style={{ marginLeft: '10px', display: 'flex', gap: '8px', borderLeft: '1px solid var(--border)', paddingLeft: '10px' }}>
+                            <span style={{ color: 'var(--foreground-secondary)', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>分类:</span>
                             <button
                                 className={`tab-btn-sm ${comparisonDimension === 'framework' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('framework')}
-                                style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'framework' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'framework' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
+                                style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'framework' ? 'var(--primary)' : 'transparent', color: comparisonDimension === 'framework' ? '#ffffff' : 'var(--foreground-secondary)', border: '1px solid var(--primary)' }}
                             >
                                 框架
                             </button>
                             <button
                                 className={`tab-btn-sm ${comparisonDimension === 'model' ? 'active' : ''}`}
                                 onClick={() => setComparisonDimension('model')}
-                                style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'model' ? '#38bdf8' : 'transparent', color: comparisonDimension === 'model' ? '#0f172a' : '#94a3b8', border: '1px solid #38bdf8' }}
+                                style={{ padding: '2px 8px', fontSize: '0.8rem', background: comparisonDimension === 'model' ? 'var(--primary)' : 'transparent', color: comparisonDimension === 'model' ? '#ffffff' : 'var(--foreground-secondary)', border: '1px solid var(--primary)' }}
                             >
                                 模型
                             </button>
@@ -1682,7 +1740,7 @@ export default function Dashboard() {
 
 
                         <div style={{ marginLeft: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <label style={{ cursor: 'pointer', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <label style={{ cursor: 'pointer', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                 <input type="checkbox" checked={comparisonGroupByLabel} onChange={(e) => {
                                     setComparisonGroupByLabel(e.target.checked);
                                     if (e.target.checked && selectedComparisonLabels.length === 0) {
@@ -1695,25 +1753,25 @@ export default function Dashboard() {
 
                             {comparisonGroupByLabel && (
                                 <div style={{ position: 'relative', display: 'inline-block' }}>
-                                    <div className="dropdown-trigger" style={{ background: '#1e293b', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid #334155', minWidth: '150px' }}>
-                                        {selectedComparisonLabels.length === 0 ? '所有标签 (All)' : `已选 ${selectedComparisonLabels.length} 个`}
+                                    <div className="dropdown-trigger" style={{ background: 'var(--dropdown-bg)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--dropdown-border)', minWidth: '150px', color: 'var(--foreground)' }}>
+                                        {selectedComparisonLabels.length === 0 ? '所有标签' : `已选 ${selectedComparisonLabels.length} 个`}
                                         <span style={{ float: 'right', fontSize: '0.8rem' }}>▼</span>
                                     </div>
                                     <div className="dropdown-content" style={{
                                         position: 'absolute', top: '100%', left: 0, zIndex: 10,
-                                        background: '#1e293b', border: '1px solid #334155', borderRadius: '4px',
+                                        background: 'var(--dropdown-bg)', border: '1px solid var(--dropdown-border)', borderRadius: '4px',
                                         padding: '0.5rem', minWidth: '200px', maxHeight: '300px', overflowY: 'auto',
-                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
+                                        boxShadow: '0 4px 6px -1px var(--shadow-color)'
                                     }}>
-                                        <label style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
+                                        <label style={{ display: 'block', marginBottom: '4px', cursor: 'pointer', color: 'var(--foreground)' }}>
                                             <input type="checkbox"
                                                 checked={selectedComparisonLabels.length === 0}
                                                 onChange={() => setSelectedComparisonLabels([])}
-                                            /> <span style={{ marginLeft: '4px' }}>所有标签 (All)</span>
+                                            /> <span style={{ marginLeft: '4px' }}>所有标签</span>
                                         </label>
-                                        <hr style={{ borderColor: '#334155', margin: '4px 0' }} />
+                                        <hr style={{ borderColor: 'var(--border)', margin: '4px 0' }} />
                                         {comparisonAvailableLabels.map(l => (
-                                            <label key={l} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
+                                            <label key={l} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer', color: 'var(--foreground)' }}>
                                                 <input type="checkbox"
                                                     checked={selectedComparisonLabels.includes(l)}
                                                     onChange={(e) => {
@@ -1738,8 +1796,8 @@ export default function Dashboard() {
                         <div>
                             {comparisonData.map((group: any) => (
                                 <div key={group.label} style={{ marginBottom: '2rem' }}>
-                                    <h3 style={{ color: '#f8fafc', borderBottom: '1px solid #334155', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
-                                        Tag: <span style={{ color: '#38bdf8' }}>{group.label}</span>
+                                    <h3 style={{ color: 'var(--foreground)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+                                        Tag: <span style={{ color: '#2563eb' }}>{group.label}</span>
                                     </h3>
                                     <div className="analysis-grid">
                                         <ChartLayout title="平均时延" unit="m" dataKey="lat" data={group.data} frameworks={comparisonSeries} yFormatter={(v) => (v / 60000).toFixed(2) + 'm'} />
@@ -1749,7 +1807,7 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             ))}
-                            {comparisonData.length === 0 && <div className="card" style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>无数据</div>}
+                            {comparisonData.length === 0 && <div className="card" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>无数据</div>}
                         </div>
                     ) : (
                         // Default View
@@ -1788,7 +1846,7 @@ export default function Dashboard() {
                                 />
                             </div>
                         ) : (
-                            <div className="card" style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>无数据</div>
+                            <div className="card" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>无数据</div>
                         )
                     )}
 
@@ -1805,7 +1863,7 @@ export default function Dashboard() {
                             {filteredQueries.map(q => <option key={q} value={q}>{q.substring(0, 80)}</option>)}
                         </select>
                         <div style={{ marginLeft: '10px', display: 'flex', alignItems: 'center', gap: '20px' }}>
-                            <label style={{ cursor: 'pointer', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <label style={{ cursor: 'pointer', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                 <input type="checkbox" checked={drillDownGroupByLabel} onChange={(e) => {
                                     setDrillDownGroupByLabel(e.target.checked);
                                     if (e.target.checked) setDrillDownGroupByModel(false);
@@ -1813,7 +1871,7 @@ export default function Dashboard() {
                                 按标签分类
                             </label>
 
-                            <label style={{ cursor: 'pointer', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <label style={{ cursor: 'pointer', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                 <input type="checkbox" checked={drillDownGroupByModel} onChange={(e) => {
                                     setDrillDownGroupByModel(e.target.checked);
                                     if (e.target.checked) setDrillDownGroupByLabel(false);
@@ -1823,15 +1881,16 @@ export default function Dashboard() {
 
                             {drillDownGroupByLabel && (
                                 <div className="dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
-                                    <div className="dropdown-trigger" style={{ background: '#1e293b', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid #334155', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div className="dropdown-trigger" style={{ background: 'var(--dropdown-bg)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--dropdown-border)', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--foreground)' }}>
                                         {selectedDrillDownLabels.length === 0 ? '所有标签 (All Labels)' : `已选 ${selectedDrillDownLabels.length} 个`}
                                         <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>▼</span>
                                     </div>
                                     <div className="dropdown-content" style={{
                                         position: 'absolute', top: '100%', left: 0, zIndex: 10,
-                                        background: '#1e293b', border: '1px solid #334155', borderRadius: '4px',
+                                        background: 'var(--dropdown-bg)', border: '1px solid var(--dropdown-border)', borderRadius: '4px',
                                         padding: '0.5rem', minWidth: '200px', maxHeight: '300px', overflowY: 'auto',
-                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
+                                        boxShadow: '0 4px 6px -1px var(--shadow-color)',
+                                        color: 'var(--foreground)'
                                     }}>
                                         <label style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
                                             <input type="checkbox"
@@ -1839,7 +1898,7 @@ export default function Dashboard() {
                                                 onChange={() => setSelectedDrillDownLabels([])}
                                             /> <span style={{ marginLeft: '4px' }}>所有标签 (All)</span>
                                         </label>
-                                        <hr style={{ borderColor: '#334155', margin: '4px 0' }} />
+                                        <hr style={{ borderColor: 'var(--border)', margin: '4px 0' }} />
                                         {drillDownAvailableLabels.map(l => (
                                             <label key={l} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
                                                 <input type="checkbox"
@@ -1860,15 +1919,16 @@ export default function Dashboard() {
 
                             {drillDownGroupByModel && (
                                 <div className="dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
-                                    <div className="dropdown-trigger" style={{ background: '#1e293b', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid #334155', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div className="dropdown-trigger" style={{ background: 'var(--dropdown-bg)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--dropdown-border)', minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--foreground)' }}>
                                         {selectedDrillDownModels.length === 0 ? '所有模型 (All Models)' : `已选 ${selectedDrillDownModels.length} 个`}
                                         <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>▼</span>
                                     </div>
                                     <div className="dropdown-content" style={{
                                         position: 'absolute', top: '100%', left: 0, zIndex: 10,
-                                        background: '#1e293b', border: '1px solid #334155', borderRadius: '4px',
+                                        background: 'var(--dropdown-bg)', border: '1px solid var(--dropdown-border)', borderRadius: '4px',
                                         padding: '0.5rem', minWidth: '200px', maxHeight: '300px', overflowY: 'auto',
-                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
+                                        boxShadow: '0 4px 6px -1px var(--shadow-color)',
+                                        color: 'var(--foreground)'
                                     }}>
                                         <label style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
                                             <input type="checkbox"
@@ -1876,7 +1936,7 @@ export default function Dashboard() {
                                                 onChange={() => setSelectedDrillDownModels([])}
                                             /> <span style={{ marginLeft: '4px' }}>所有模型 (All)</span>
                                         </label>
-                                        <hr style={{ borderColor: '#334155', margin: '4px 0' }} />
+                                        <hr style={{ borderColor: 'var(--border)', margin: '4px 0' }} />
                                         {drillDownAvailableModels.map(m => (
                                             <label key={m} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
                                                 <input type="checkbox"
@@ -2000,7 +2060,7 @@ export default function Dashboard() {
                                                         </div>
                                                     </div>
                                                     <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => {
-                                                        const url = `/details?framework=${encodeURIComponent(best.framework)}&expandTaskId=${best.task_id || best.upload_id}`;
+                                                        const url = `${basePath}/details?framework=${encodeURIComponent(best.framework)}&expandTaskId=${best.task_id || best.upload_id}`;
                                                         window.open(url, '_blank');
                                                     }}>查看 &gt;</div>
                                                 </div>
@@ -2013,7 +2073,7 @@ export default function Dashboard() {
                                                             Cost: {formatCost(worst.cost) || '-'}
                                                         </div>
                                                     </div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(worst.framework)}&query=${encodeURIComponent(worst.query)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>查看 &gt;</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(worst.framework)}&query=${encodeURIComponent(worst.query)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>查看 &gt;</div>
                                                 </div>
                                                 {/*Skill Lift*/}
                                                 {drillDownGroupByLabel && skillLiftMetrics !== null && (
@@ -2107,7 +2167,7 @@ export default function Dashboard() {
                                             Time: {formatDateTime(singleQueryStats.best.timestamp)}
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&query=${encodeURIComponent(singleQueryStats.best.query)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>查看 &gt;</div>
+                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&query=${encodeURIComponent(singleQueryStats.best.query)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>查看 &gt;</div>
                                 </div>
                                 <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                     <div>
@@ -2119,7 +2179,7 @@ export default function Dashboard() {
                                         </div>
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => {
-                                        const url = `/details?framework=${encodeURIComponent(singleQueryStats.worst.framework)}&expandTaskId=${singleQueryStats.worst.task_id || singleQueryStats.worst.upload_id}`;
+                                        const url = `${basePath}/details?framework=${encodeURIComponent(singleQueryStats.worst.framework)}&expandTaskId=${singleQueryStats.worst.task_id || singleQueryStats.worst.upload_id}`;
                                         window.open(url, '_blank');
                                     }}>查看 &gt;</div>
                                 </div>
@@ -2156,17 +2216,17 @@ export default function Dashboard() {
                             placeholder="搜索问题..."
                             value={tableQuery}
                             onChange={e => setTableQuery(e.target.value)}
-                            style={{ padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', color: 'white', minWidth: '250px' }}
+                            style={{ padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: '4px', color: 'var(--foreground)', minWidth: '250px' }}
                         />
 
-                        <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: '0.9rem' }}>
+                        <span style={{ marginLeft: 'auto', color: 'var(--foreground-secondary)', fontSize: '0.9rem' }}>
                             共有 {tableFilteredData.length} 条数据
                         </span>
                     </div>
 
                     <div className="card table-container">
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead style={{ textAlign: 'left', color: '#94a3b8', borderBottom: '1px solid #334155' }}>
+                            <thead style={{ textAlign: 'left', color: 'var(--foreground-secondary)', borderBottom: '1px solid var(--border)' }}>
                                 <tr>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>时间</th>
                                     <th className="p-2" style={{ whiteSpace: 'nowrap' }}>框架</th>
@@ -2185,14 +2245,14 @@ export default function Dashboard() {
                                 {currentTableData.map((row, i) => {
                                     const recordId = row.upload_id || row.task_id || '';
                                     return (
-                                        <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                                        <tr key={i} style={{ borderBottom: '1px solid var(--table-row-border)' }}>
                                             <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{formatDateTime(row.timestamp)}</td>
                                             <td className="p-2" style={{ whiteSpace: 'nowrap' }}>{row.framework}</td>
                                             <td className="p-2" title={row.query}>{row.query.length > 30 ? row.query.substring(0, 30) + '...' : row.query}</td>
                                             <td className="p-2">{formatLatency(row.latency)}</td>
                                             <td className="p-2">{formatTokens(row.tokens)}</td>
                                             <td className="p-2">
-                                                <span style={{ color: row.answer_score === null ? '#94a3b8' : ((row.answer_score || 0) > 0.8 ? '#4ade80' : '#ef4444'), fontWeight: 'bold' }}>
+                                                <span style={{ color: row.answer_score === null ? 'var(--foreground-muted)' : ((row.answer_score || 0) > 0.8 ? 'var(--success)' : 'var(--error)'), fontWeight: 'bold' }}>
                                                     {row.answer_score === null ? '--' : (row.answer_score || 0).toFixed(2)}
                                                 </span>
                                             </td>
@@ -2206,7 +2266,7 @@ export default function Dashboard() {
                                             }>
                                                 {row.cost != null
                                                     ? formatCost(row.cost)
-                                                    : (row.tokens ? <span style={{ color: '#64748b' }}>N/A</span> : '-')
+                                                    : (row.tokens ? <span style={{ color: 'var(--foreground-muted)' }}>N/A</span> : '-')
                                                 }
                                             </td>
                                             <td className="p-2" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{row.model || '-'}</td>
@@ -2217,10 +2277,10 @@ export default function Dashboard() {
                                                         <input
                                                             value={tempLabelValue}
                                                             onChange={e => setTempLabelValue(e.target.value)}
-                                                            style={{ width: '80px', padding: '2px 4px', fontSize: '0.8rem', background: '#0f172a', border: '1px solid #334155' }}
+                                                            style={{ width: '80px', padding: '2px 4px', fontSize: '0.8rem', background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--foreground)' }}
                                                         />
-                                                        <button onClick={() => handleUpdateLabel(row, tempLabelValue)} style={{ color: '#4ade80', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                                                        <button onClick={() => setEditingLabelId(null)} style={{ color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                                                        <button onClick={() => handleUpdateLabel(row, tempLabelValue)} style={{ color: 'var(--success)', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                                                        <button onClick={() => setEditingLabelId(null)} style={{ color: 'var(--error)', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
                                                     </div>
                                                 ) : (
                                                     <div
@@ -2232,17 +2292,17 @@ export default function Dashboard() {
                                                             }
                                                         }}
                                                     >
-                                                        {row.label ? <span style={{ padding: '2px 6px', background: '#334155', borderRadius: '4px', fontSize: '0.8rem' }}>{row.label}</span> : <span style={{ color: '#64748b' }}>-</span>}
-                                                        <span style={{ fontSize: '0.7rem', color: '#475569', opacity: 0.5 }}>✎</span>
+                                                        {row.label ? <span style={{ padding: '2px 6px', background: 'var(--background-secondary)', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid var(--border)' }}>{row.label}</span> : <span style={{ color: 'var(--foreground-muted)' }}>-</span>}
+                                                        <span style={{ fontSize: '0.7rem', color: 'var(--foreground-muted)', opacity: 0.5 }}>✎</span>
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="p-2">
                                                 <div style={{ display: 'flex', gap: '8px', whiteSpace: 'nowrap' }}>
                                                     <button onClick={() => {
-                                                        const url = `/details?framework=${encodeURIComponent(row.framework)}&expandTaskId=${recordId}`;
+                                                        const url = `${basePath}/details?framework=${encodeURIComponent(row.framework)}&expandTaskId=${recordId}`;
                                                         window.open(url, '_blank');
-                                                    }} className="btn-sm" style={{ background: '#3b82f6' }}>
+                                                    }} className="btn-sm" style={{ background: 'var(--primary)' }}>
                                                         详情
                                                     </button>
                                                     <button
@@ -2250,8 +2310,8 @@ export default function Dashboard() {
                                                         className="btn-sm"
                                                         disabled={rejudgingIds.has(recordId)}
                                                         style={{
-                                                            background: rejudgingIds.has(recordId) ? '#94a3b8' : '#fbbf24',
-                                                            color: '#0f172a',
+                                                            background: rejudgingIds.has(recordId) ? 'var(--foreground-muted)' : 'var(--warning)',
+                                                            color: '#ffffff',
                                                             cursor: rejudgingIds.has(recordId) ? 'not-allowed' : 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
@@ -2311,6 +2371,17 @@ export default function Dashboard() {
                             </button>
                         </div>
                     )}
+                    
+                    <div style={{ marginTop: '2rem', marginBottom: '0.5rem', height: '1px', background: 'linear-gradient(to right, transparent, rgba(56, 189, 248, 0.5), transparent)' }}></div>
+                    
+                    {/* Promotion Section */}
+                    <div style={{ marginTop: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8', lineHeight: 1.6 }}>
+                            <a href="https://atomgit.com/openeuler/witty-skill-insight" target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                                你的 ⭐ Star 是前进动力，📢 Issue 使产品更稳，🚀 PR 让功能更强。
+                            </a>
+                        </p>
+                    </div>
                 </>
             )}
 
@@ -3212,18 +3283,13 @@ export default function Dashboard() {
                                             )}
                                         </button>
                                     </div>
-                                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#bae6fd', lineHeight: 1.5 }}>
-                                            <strong>Usage:</strong> Set this key in your environment to upload data seamlessly without login.<br />
-                                            <code style={{ display: 'block', marginTop: '6px', padding: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px' }}>export SKILL_INSIGHT_API_KEY={localApiKey}</code>
-                                        </p>
-                                    </div>
                                 </div>
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                                     No API Key found.
                                 </div>
                             )}
+
 
                         </div>
 
@@ -3240,7 +3306,7 @@ export default function Dashboard() {
                                     <button
                                         onClick={async () => {
                                             if (guideState?.guideDisabled) {
-                                                const res = await fetch('/api/guide', {
+                                                const res = await apiFetch('/api/guide', {
                                                     method: 'POST',
                                                     headers: {
                                                         'Content-Type': 'application/json',
@@ -3255,7 +3321,7 @@ export default function Dashboard() {
                                                     window.location.reload();
                                                 }
                                             } else {
-                                                const res = await fetch('/api/guide', {
+                                                const res = await apiFetch('/api/guide', {
                                                     method: 'POST',
                                                     headers: {
                                                         'Content-Type': 'application/json',
@@ -3307,6 +3373,7 @@ export default function Dashboard() {
                             >
                                 Close
                             </button>
+                            {!isOrgMode && (
                             <button
                                 onClick={() => {
                                     localStorage.removeItem('user_id');
@@ -3326,6 +3393,7 @@ export default function Dashboard() {
                             >
                                 Sign Out
                             </button>
+                            )}
                         </div>
                     </div>
                 </div>
