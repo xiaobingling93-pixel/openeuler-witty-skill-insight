@@ -34,6 +34,7 @@ model SkillVersion {
   id        String   @id @default(cuid())
   skillId   String
   version   Int
+  semanticVersion String?  // 语义化版本号，用于企业同步
   content   String
   assetPath String?
   files     String?
