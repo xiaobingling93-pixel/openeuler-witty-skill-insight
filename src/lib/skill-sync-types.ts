@@ -47,3 +47,9 @@ export interface SkillSyncResult {
   success: boolean;
   error?: string;
 }
+
+export interface EnterpriseDeleteResponse {
+  code: number;
+  message: string;
+  data?: any;
+}

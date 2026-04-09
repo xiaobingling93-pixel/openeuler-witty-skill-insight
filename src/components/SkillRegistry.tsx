@@ -34,6 +34,7 @@ interface SkillVersion {
 // --- Components ---
 
 function EnterpriseSync({ onSuccess }: { onSuccess: () => void }) {
+  const { apiKey } = useAuth();
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncProgress, setSyncProgress] = useState('');
@@ -45,7 +46,8 @@ function EnterpriseSync({ onSuccess }: { onSuccess: () => void }) {
     
     try {
       const res = await apiFetch('/api/skills/sync-enterprise', {
-        method: 'POST'
+        method: 'POST',
+        headers: apiKey ? { 'x-witty-api-key': apiKey } : {}
       });
       
       const result = await res.json();
@@ -69,10 +71,10 @@ function EnterpriseSync({ onSuccess }: { onSuccess: () => void }) {
     <div className="upload-card">
       <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#94a3b8' }}>🔄</div>
       <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem', color: '#1e293b' }}>
-        从企业同步
+        从'skill市场--我的skill'同步
       </h3>
       <p style={{ color: '#64748b', marginBottom: '1.5rem', maxWidth: '400px', fontSize: '0.9rem', lineHeight: 1.5 }}>
-        从企业API自动拉取所有技能并同步到本地。
+        从'skill市场--我的skill'自动拉取所有技能并同步到本地。
         <br />同版本号skill将被覆盖。
       </p>
       
@@ -444,6 +446,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   const [currentActiveVersion, setCurrentActiveVersion] = useState(skill.activeVersion);
   const [hasUpdated, setHasUpdated] = useState(false);
   const [viewingVersion, setViewingVersion] = useState<number | null>(null);
+  const [isEnterpriseMode, setIsEnterpriseMode] = useState(false);
 
   useEffect(() => {
     apiFetch(`/api/skills/${skill.id}/versions?user=${encodeURIComponent(user || '')}`)
@@ -456,6 +459,16 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   useEffect(() => {
     setCurrentActiveVersion(skill.activeVersion);
   }, [skill.activeVersion]);
+
+  // 检查企业模式
+  useEffect(() => {
+    apiFetch('/api/config/status?check_org=true')
+      .then(res => res.json())
+      .then(data => {
+        setIsEnterpriseMode(data.org_mode || false);
+      })
+      .catch(() => {});
+  }, []);
 
   // Wrap onClose to trigger update if needed
   const handleClose = () => {
@@ -484,7 +497,15 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   };
 
   const handleDeleteVersion = async (version: number) => {
-    if (!confirm(`Are you sure you want to delete version ${version}? This action cannot be undone.`)) return;
+    const versionObj = versions.find(v => v.version === version);
+    const { semanticVersion } = versionObj || {};
+    const versionDisplay = semanticVersion || version;
+    
+    const confirmMsg = isEnterpriseMode
+      ? `确定要删除版本 ${versionDisplay} 吗？此操作将同时删除企业中的对应skill（如果存在），无法撤销。`
+      : `Are you sure you want to delete version ${versionDisplay}? This action cannot be undone.`;
+    
+    if (!confirm(confirmMsg)) return;
     
     try {
       const res = await apiFetch(`/api/skills/${skill.id}/versions/${version}?user=${encodeURIComponent(user || '')}`, {
@@ -492,7 +513,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
       });
 
       if (res.ok) {
-        alert(`Version ${version} deleted successfully!`);
+        alert(`Version ${versionDisplay} deleted successfully!`);
         const vRes = await apiFetch(`/api/skills/${skill.id}/versions?user=${encodeURIComponent(user || '')}`);
         const newVersions = await vRes.json();
         setVersions(newVersions);
@@ -732,6 +753,7 @@ function SkillCatalog({ refresh }: { refresh: number }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [isEnterpriseMode, setIsEnterpriseMode] = useState(false);
 
   const fetchSkills = () => {
     if (!user) return;
@@ -748,6 +770,16 @@ function SkillCatalog({ refresh }: { refresh: number }) {
     fetchSkills();
   }, [refresh]);
 
+  // 检查企业模式
+  useEffect(() => {
+    apiFetch('/api/config/status?check_org=true')
+      .then(res => res.json())
+      .then(data => {
+        setIsEnterpriseMode(data.org_mode || false);
+      })
+      .catch(() => {});
+  }, []);
+
   // Keep selectedSkill in sync with fetched skills
   useEffect(() => {
     if (selectedSkill) {
@@ -757,7 +789,11 @@ function SkillCatalog({ refresh }: { refresh: number }) {
   }, [skills]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this skill? This action cannot be undone.')) return;
+    const confirmMsg = isEnterpriseMode
+      ? '确定要删除这个skill吗？此操作将同时删除企业中的对应skill，无法撤销。'
+      : 'Are you sure you want to delete this skill? This action cannot be undone.';
+    
+    if (!confirm(confirmMsg)) return;
     
     try {
       const res = await apiFetch(`/api/skills?id=${id}&user=${encodeURIComponent(user || '')}`, { method: 'DELETE' });

@@ -2,7 +2,7 @@ import AdmZip from 'adm-zip';
 import fs from 'fs';
 import path from 'path';
 import { db } from '@/lib/prisma';
-import { EnterpriseSkill, EnterpriseSkillListResponse, EnterpriseDownloadResponse, SyncResult, SkillSyncResult } from './skill-sync-types';
+import { EnterpriseSkill, EnterpriseSkillListResponse, EnterpriseDownloadResponse, SyncResult, SkillSyncResult, EnterpriseDeleteResponse } from './skill-sync-types';
 
 async function fetchEnterpriseSkillList(cookie?: string): Promise<EnterpriseSkill[]> {
   const listUrl = process.env.ORG_SKILL_LIST_URL;
@@ -181,6 +181,7 @@ async function storeSkillFromExtracted(
     skillId: skill.id,
     version: nextVersionNum,
     semanticVersion: skillInfo.version,
+    enterpriseSkillId: skillInfo.id,
     content: skillContent,
     assetPath: `data/storage/skills/${skill.id}/v${nextVersionNum}`,
     files: JSON.stringify(fileList),
@@ -276,4 +277,37 @@ export async function syncEnterpriseSkills(user: string | null, cookie?: string)
       endTime: new Date().toISOString()
     };
   }
+}
+
+export async function deleteEnterpriseSkill(
+  enterpriseSkillId: number,
+  cookie?: string
+): Promise<void> {
+  const deleteUrlBase = process.env.ORG_SKILL_DELETE_URL_BASE;
+  if (!deleteUrlBase) {
+    throw new Error('ORG_SKILL_DELETE_URL_BASE 环境变量未配置');
+  }
+
+  // 处理URL模板中的{id}占位符
+  const deleteUrl = deleteUrlBase.replace('{id}', enterpriseSkillId.toString());
+  
+  console.log('[Enterprise-Delete] 删除企业skill:', enterpriseSkillId);
+  console.log('[Enterprise-Delete] 删除URL:', deleteUrl);
+  console.log('[Enterprise-Delete] Cookie:', cookie ? '存在' : '不存在');
+  
+  const response = await fetch(deleteUrl, {
+    method: 'DELETE',
+    headers: {
+      'Accept': '*/*',
+      ...(cookie ? { Cookie: cookie } : {})
+    }
+  });
+  
+  console.log('[Enterprise-Delete] 响应状态:', response.status, response.statusText);
+  
+  if (!response.ok) {
+    throw new Error(`删除企业skill失败: ${response.statusText}`);
+  }
+  
+  console.log('[Enterprise-Delete] 企业skill删除成功');
 }
