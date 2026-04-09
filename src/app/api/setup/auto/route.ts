@@ -179,6 +179,9 @@ fi
 if [ "$INSTALL_OPENCODE" = "true" ]; then
     echo "⏬ Downloading OpenCode Plugin..."
     curl -sSf "$SKILL_INSIGHT_BASE_URL/api/setup/opencode" -o "$HOME/.opencode/plugins/Witty-Skill-Insight.ts"
+    echo "⏬ Installing OpenCode commands..."
+    mkdir -p "$HOME/.config/opencode/commands"
+    curl -sSf "$SKILL_INSIGHT_BASE_URL/api/setup/opencode-commands/si-optimizer" -o "$HOME/.config/opencode/commands/si-optimizer.md"
 fi
 
 if [ "$INSTALL_CLAUDE" = "true" ]; then
@@ -340,6 +343,7 @@ echo "------------------------------------------------"
 echo "Installed Components:"
 if [ "$INSTALL_OPENCODE" = "true" ]; then
     echo "  ✅ OpenCode Plugin: ~/.opencode/plugins/Witty-Skill-Insight.ts"
+    echo "  ✅ OpenCode Command: ~/.config/opencode/commands/si-optimizer.md"
 fi
 if [ "$INSTALL_CLAUDE" = "true" ]; then
     echo "  ✅ Claude Watcher: ~/.skill-insight/claude_watcher_client.ts"
