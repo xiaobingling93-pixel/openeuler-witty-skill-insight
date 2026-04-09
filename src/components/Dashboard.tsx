@@ -2073,7 +2073,7 @@ export default function Dashboard() {
                                                             Cost: {formatCost(worst.cost) || '-'}
                                                         </div>
                                                     </div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(worst.framework)}&query=${encodeURIComponent(worst.query)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>查看 &gt;</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(worst.framework)}&expandTaskId=${worst.task_id || worst.upload_id}`, '_blank')}>查看 &gt;</div>
                                                 </div>
                                                 {/*Skill Lift*/}
                                                 {drillDownGroupByLabel && skillLiftMetrics !== null && (
@@ -2167,7 +2167,7 @@ export default function Dashboard() {
                                             Time: {formatDateTime(singleQueryStats.best.timestamp)}
                                         </div>
                                     </div>
-                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&query=${encodeURIComponent(singleQueryStats.best.query)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>查看 &gt;</div>
+                                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'right' }} onClick={() => window.open(`${basePath}/details?framework=${encodeURIComponent(singleQueryStats.best.framework)}&expandTaskId=${singleQueryStats.best.task_id || singleQueryStats.best.upload_id}`, '_blank')}>查看 &gt;</div>
                                 </div>
                                 <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                     <div>
