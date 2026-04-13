@@ -1,6 +1,7 @@
 import { canAccessSkill, resolveUser } from '@/lib/auth';
 import { db } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
+import { deleteEnterpriseSkill } from '@/lib/skill-sync-service';
 
 export async function DELETE(
     request: NextRequest,
@@ -34,7 +35,23 @@ export async function DELETE(
                 error: 'Cannot delete the last version. Delete the skill instead.' 
             }, { status: 400 });
         }
-
+        
+        // 企业模式：先删除对应的企业skill
+        if (process.env.ORGANIZATION_MODE === 'true') {
+          try {
+            const incomingCookie = request.headers.get('cookie') || undefined;
+            console.log('[Delete-Version] 企业模式，开始删除企业skill');
+            
+            if (versionToDelete.enterpriseSkillId) {
+              console.log('[Delete-Version] 删除企业skill ID:', versionToDelete.enterpriseSkillId);
+              await deleteEnterpriseSkill(versionToDelete.enterpriseSkillId, incomingCookie);
+            }
+          } catch (error: any) {
+            console.error('[Delete-Version] 企业删除失败，继续删除本地版本:', error);
+            console.error('[Delete-Version] 错误信息:', error.message);
+          }
+        }
+        
         await db.deleteSkillVersion(id, version);
 
         if (skill.activeVersion === version) {

@@ -14,6 +14,7 @@ interface Skill {
   author: string;
   updatedAt: string;
   version: number;
+  semanticVersion?: string;
   activeVersion: number;
   visibility: string;
   qualityScore: number;
@@ -25,11 +26,100 @@ interface Skill {
 interface SkillVersion {
   id: string;
   version: number;
+  semanticVersion?: string;
   changeLog: string;
   createdAt: string;
 }
 
 // --- Components ---
+
+function EnterpriseSync({ onSuccess }: { onSuccess: () => void }) {
+  const { apiKey } = useAuth();
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+  const [syncProgress, setSyncProgress] = useState('');
+
+  const handleSyncFromEnterprise = async () => {
+    setSyncing(true);
+    setSyncProgress('正在从企业同步技能...');
+    setSyncResult(null);
+    
+    try {
+      const res = await apiFetch('/api/skills/sync-enterprise', {
+        method: 'POST',
+        headers: apiKey ? { 'x-witty-api-key': apiKey } : {}
+      });
+      
+      const result = await res.json();
+      if (res.ok) {
+        setSyncProgress('同步完成！');
+        setSyncResult(result);
+        onSuccess();
+      } else {
+        setSyncProgress(`同步失败: ${result.error}`);
+        alert(`同步失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      setSyncProgress(`同步出错: ${err.message}`);
+      alert('同步出错');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="upload-card">
+      <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#94a3b8' }}>🔄</div>
+      <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem', color: '#1e293b' }}>
+        从'skill市场--我的skill'同步
+      </h3>
+      <p style={{ color: '#64748b', marginBottom: '1.5rem', maxWidth: '400px', fontSize: '0.9rem', lineHeight: 1.5 }}>
+        从'skill市场--我的skill'自动拉取所有技能并同步到本地。
+        <br />同版本号skill将被覆盖。
+      </p>
+      
+      <button
+        className="btn-primary"
+        onClick={handleSyncFromEnterprise}
+        disabled={syncing}
+        style={{ 
+          opacity: syncing ? 0.6 : 1,
+          cursor: syncing ? 'not-allowed' : 'pointer'
+        }}
+      >
+        {syncing ? '同步中...' : '开始同步'}
+      </button>
+      
+      {syncProgress && (
+        <div style={{ marginTop: '1rem', color: '#64748b', fontSize: '0.9rem' }}>
+          {syncProgress}
+        </div>
+      )}
+      
+      {syncResult && (
+        <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f1f5f9', borderRadius: '0.5rem' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>同步结果：</div>
+          <div>总技能数: {syncResult.totalSkills}</div>
+          <div style={{ color: '#16a34a' }}>成功: {syncResult.successCount}</div>
+          <div style={{ color: '#dc2626' }}>失败: {syncResult.failedCount}</div>
+          
+          {syncResult.failedCount > 0 && (
+            <details style={{ marginTop: '0.5rem' }}>
+              <summary style={{ cursor: 'pointer', color: '#64748b' }}>查看失败详情</summary>
+              <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
+                {syncResult.results.filter((r: any) => !r.success).map((r: any, i: number) => (
+                  <li key={i} style={{ color: '#dc2626' }}>
+                    {r.skillName} (v{r.version}): {r.error}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SkillUpload({ onSuccess }: { onSuccess: () => void }) {
   const { user } = useAuth();
@@ -356,6 +446,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   const [currentActiveVersion, setCurrentActiveVersion] = useState(skill.activeVersion);
   const [hasUpdated, setHasUpdated] = useState(false);
   const [viewingVersion, setViewingVersion] = useState<number | null>(null);
+  const [isEnterpriseMode, setIsEnterpriseMode] = useState(false);
 
   useEffect(() => {
     apiFetch(`/api/skills/${skill.id}/versions?user=${encodeURIComponent(user || '')}`)
@@ -368,6 +459,16 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   useEffect(() => {
     setCurrentActiveVersion(skill.activeVersion);
   }, [skill.activeVersion]);
+
+  // 检查企业模式
+  useEffect(() => {
+    apiFetch('/api/config/status?check_org=true')
+      .then(res => res.json())
+      .then(data => {
+        setIsEnterpriseMode(data.org_mode || false);
+      })
+      .catch(() => {});
+  }, []);
 
   // Wrap onClose to trigger update if needed
   const handleClose = () => {
@@ -396,7 +497,15 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
   };
 
   const handleDeleteVersion = async (version: number) => {
-    if (!confirm(`Are you sure you want to delete version ${version}? This action cannot be undone.`)) return;
+    const versionObj = versions.find(v => v.version === version);
+    const { semanticVersion } = versionObj || {};
+    const versionDisplay = semanticVersion || version;
+    
+    const confirmMsg = isEnterpriseMode
+      ? `确定要删除版本 ${versionDisplay} 吗？此操作将同时删除企业中的对应skill（如果存在），无法撤销。`
+      : `Are you sure you want to delete version ${versionDisplay}? This action cannot be undone.`;
+    
+    if (!confirm(confirmMsg)) return;
     
     try {
       const res = await apiFetch(`/api/skills/${skill.id}/versions/${version}?user=${encodeURIComponent(user || '')}`, {
@@ -404,7 +513,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
       });
 
       if (res.ok) {
-        alert(`Version ${version} deleted successfully!`);
+        alert(`Version ${versionDisplay} deleted successfully!`);
         const vRes = await apiFetch(`/api/skills/${skill.id}/versions?user=${encodeURIComponent(user || '')}`);
         const newVersions = await vRes.json();
         setVersions(newVersions);
@@ -470,7 +579,9 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b' }}>{skill.name}</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.875rem', color: '#64748b' }}>
               <span>当前使用 (Active):</span>
-              <span style={{ color: '#16a34a', fontFamily: 'monospace', fontWeight: 'bold', background: 'rgba(22, 163, 74, 0.1)', padding: '0 6px', borderRadius: '4px' }}>v{currentActiveVersion}</span>
+              <span style={{ color: '#16a34a', fontFamily: 'monospace', fontWeight: 'bold', background: 'rgba(22, 163, 74, 0.1)', padding: '0 6px', borderRadius: '4px' }}>
+                v{versions.find(v => v.version === currentActiveVersion)?.semanticVersion || currentActiveVersion}
+              </span>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -518,7 +629,7 @@ function SkillVersionsModal({ skill, onClose, onUpdate }: { skill: Skill, onClos
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1rem', fontFamily: 'monospace', fontWeight: 'bold', color: isActive ? '#16a34a' : '#2563eb' }}>
-                          v{v.version}
+                          v{v.semanticVersion || v.version}
                         </span>
                         {isActive && (
                           <span style={{
@@ -642,6 +753,7 @@ function SkillCatalog({ refresh }: { refresh: number }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [isEnterpriseMode, setIsEnterpriseMode] = useState(false);
 
   const fetchSkills = () => {
     if (!user) return;
@@ -658,6 +770,16 @@ function SkillCatalog({ refresh }: { refresh: number }) {
     fetchSkills();
   }, [refresh]);
 
+  // 检查企业模式
+  useEffect(() => {
+    apiFetch('/api/config/status?check_org=true')
+      .then(res => res.json())
+      .then(data => {
+        setIsEnterpriseMode(data.org_mode || false);
+      })
+      .catch(() => {});
+  }, []);
+
   // Keep selectedSkill in sync with fetched skills
   useEffect(() => {
     if (selectedSkill) {
@@ -667,7 +789,11 @@ function SkillCatalog({ refresh }: { refresh: number }) {
   }, [skills]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this skill? This action cannot be undone.')) return;
+    const confirmMsg = isEnterpriseMode
+      ? '确定要删除这个skill吗？此操作将同时删除企业中的对应skill，无法撤销。'
+      : 'Are you sure you want to delete this skill? This action cannot be undone.';
+    
+    if (!confirm(confirmMsg)) return;
     
     try {
       const res = await apiFetch(`/api/skills?id=${id}&user=${encodeURIComponent(user || '')}`, { method: 'DELETE' });
@@ -744,7 +870,9 @@ function SkillCatalog({ refresh }: { refresh: number }) {
                   {skill.name}
                 </h4>
                 <div className="skill-meta">
-                  <span className="skill-version-badge">v{skill.version}</span>
+                  <span className="skill-version-badge">
+                    {skill.semanticVersion ? `v${skill.semanticVersion}` : `v${skill.version}`}
+                  </span>
                   <span className="skill-date">{new Date(skill.updatedAt).toLocaleDateString()}</span>
                 </div>
               </div>
@@ -834,6 +962,16 @@ function SkillCatalog({ refresh }: { refresh: number }) {
 export default function SkillRegistry() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'upload'>('catalog');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isEnterpriseMode, setIsEnterpriseMode] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/config/status?check_org=true')
+      .then(res => res.json())
+      .then(data => {
+        setIsEnterpriseMode(data.org_mode || false);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div style={{ marginTop: '1rem' }}>
@@ -860,10 +998,17 @@ export default function SkillRegistry() {
         )}
 
         {activeTab === 'upload' && (
-          <SkillUpload onSuccess={() => {
-            setRefreshKey(prev => prev + 1);
-            setActiveTab('catalog');
-          }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+            <SkillUpload onSuccess={() => {
+              setRefreshKey(prev => prev + 1);
+              setActiveTab('catalog');
+            }} />
+            {isEnterpriseMode && (
+              <EnterpriseSync onSuccess={() => {
+                setRefreshKey(prev => prev + 1);
+              }} />
+            )}
+          </div>
         )}
       </div>
     </div>

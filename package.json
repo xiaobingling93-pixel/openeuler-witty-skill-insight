@@ -1,6 +1,6 @@
 {
   "name": "@witty-ai/skill-insight",
-  "version": "0.3.0-beta",
+  "version": "0.5.0-beta",
   "description": "Agent Skill 评估与观测平台 — 量化评估 Skills 在 Agent 上的实际运行效果",
   "license": "MIT",
   "private": false,
@@ -28,6 +28,7 @@
     "@prisma/client": "5.22.0",
     "@types/archiver": "^7.0.0",
     "@types/uuid": "^11.0.0",
+    "adm-zip": "^0.5.10",
     "archiver": "7.0.1",
     "chokidar": "^5.0.0",
     "dotenv": "^17.3.1",
@@ -50,6 +51,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
     "@types/pg": "^8.18.0",
     "@types/react": "^19",

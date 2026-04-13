@@ -3,6 +3,7 @@ import { db, prisma } from '@/lib/prisma';
 import fs from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
+import { deleteEnterpriseSkill } from '@/lib/skill-sync-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,7 +98,7 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id');
   const userParam = searchParams.get('user');
   if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
-
+  
   try {
     const { username: user } = await resolveUser(request, userParam);
     
@@ -107,15 +108,35 @@ export async function DELETE(request: NextRequest) {
     if (user && skill.user && skill.user !== user) {
         return NextResponse.json({ error: 'Unauthorized delete' }, { status: 403 });
     }
-
+    
+    // 企业模式：先删除对应的企业skill
+    if (process.env.ORGANIZATION_MODE === 'true') {
+      try {
+        const incomingCookie = request.headers.get('cookie') || undefined;
+        console.log('[Delete-Skill] 企业模式，开始删除企业skill');
+        
+        // 获取所有版本的企业skill id
+        const versions = skill.versions || [];
+        for (const version of versions) {
+          if (version.enterpriseSkillId) {
+            console.log('[Delete-Skill] 删除企业skill ID:', version.enterpriseSkillId);
+            await deleteEnterpriseSkill(version.enterpriseSkillId, incomingCookie);
+          }
+        }
+      } catch (error: any) {
+        console.error('[Delete-Skill] 企业删除失败，继续删除本地skill:', error);
+        console.error('[Delete-Skill] 错误信息:', error.message);
+      }
+    }
+ 
     const storagePath = path.join(process.cwd(), 'data', 'storage', 'skills', id);
-
+ 
     if (fs.existsSync(storagePath)) {
       fs.rmSync(storagePath, { recursive: true, force: true });
     }
-
+ 
     await db.deleteSkill(id);
-
+ 
     return NextResponse.json({ success: true });
   } catch (e: any) {
     console.error('Delete Skill Error:', e);
