@@ -85,7 +85,7 @@ export interface JudgmentResult {
 export interface JudgeCriteria {
   standard_answer_example?: string;
   root_causes?: { content: string; weight: number }[];
-  key_actions?: { content: string; weight: number }[];
+  key_actions?: { content: string; weight: number; controlFlowType?: 'required' | 'conditional' | 'loop' | 'optional' | 'handoff'; condition?: string; branchLabel?: string; loopCondition?: string; expectedMinCount?: number; expectedMaxCount?: number; groupId?: string }[];
   skill_definition?: string;
 }
 
@@ -167,12 +167,99 @@ export async function judgeAnswer(
         reasonLines.push(`1. **Root Cause** [${rc.content.replace(/\n/g, ' ')}]: ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${rc.weight})`);
     });
 
-    // Process Key Actions
-    kaList.forEach(ka => {
+    // Group key actions by groupId for conditional groups
+    const keyActionsByGroup = new Map<string, typeof kaList>();
+    const ungroupedActions: typeof kaList = [];
+
+    for (const ka of kaList) {
+        const groupId = (ka as any).groupId;
+        const cfType = (ka as any).controlFlowType || 'required';
+        
+        if (cfType === 'conditional' && groupId) {
+            if (!keyActionsByGroup.has(groupId)) {
+                keyActionsByGroup.set(groupId, []);
+            }
+            keyActionsByGroup.get(groupId)!.push(ka);
+        } else {
+            ungroupedActions.push(ka);
+        }
+    }
+
+    // Process conditional groups first (grouped by groupId)
+    for (const [groupId, groupActions] of keyActionsByGroup) {
+        // Find all evaluations for this group
+        const groupEvaluations = groupActions.map(ka => {
+            const ev = evaluations.find((e: any) => e.id === ka.id);
+            const match = ev ? Math.max(0, Math.min(1, Number(ev.match_score))) : 0;
+            const explanation = ev?.explanation || '未找到评分结果';
+            return { ka, ev, match, explanation };
+        });
+
+        // Check if any branch has a match score > 0 or is triggered
+        const triggeredBranch = groupEvaluations.find(ge => ge.match > 0 || !ge.explanation.includes('此分支未触发'));
+
+        if (triggeredBranch) {
+            // Only count the triggered branch
+            const { ka, ev, match, explanation } = triggeredBranch;
+            const branchLabel = (ka as any).branchLabel || '';
+            
+            totalWeightedScore += match * ka.weight;
+            totalWeight += ka.weight;
+            reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}] (条件分支${branchLabel ? ' - ' + branchLabel : ''}): ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${ka.weight})`);
+
+            // Log other branches as skipped
+            for (const ge of groupEvaluations) {
+                if (ge.ka.id !== triggeredBranch.ka.id) {
+                    reasonLines.push(`2. **Key Action** [${ge.ka.content.replace(/\n/g, ' ')}] (条件分支${(ge.ka as any).branchLabel ? ' - ' + (ge.ka as any).branchLabel : ''}): ${(ge.match * 100).toFixed(0)}% match. ${ge.explanation} (该分支未触发，不计入总分)`);
+                }
+            }
+        } else {
+            // No branch triggered - count the first branch as 0
+            const firstBranch = groupEvaluations[0];
+            const { ka, ev, match, explanation } = firstBranch;
+            const branchLabel = (ka as any).branchLabel || '';
+            
+            totalWeightedScore += 0 * ka.weight; 
+            totalWeight += ka.weight;
+            reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}] (条件分支${branchLabel ? ' - ' + branchLabel : ''}): ${(match * 100).toFixed(0)}% match. ${explanation} (所有分支均未触发，Weight: ${ka.weight})`);
+
+            // Log other branches as skipped
+            for (let i = 1; i < groupEvaluations.length; i++) {
+                const ge = groupEvaluations[i];
+                reasonLines.push(`2. **Key Action** [${ge.ka.content.replace(/\n/g, ' ')}] (条件分支${(ge.ka as any).branchLabel ? ' - ' + (ge.ka as any).branchLabel : ''}): ${(ge.match * 100).toFixed(0)}% match. ${ge.explanation} (该分支未触发，不计入总分)`);
+            }
+        }
+    }
+
+    // Process ungrouped key actions
+    ungroupedActions.forEach(ka => {
         const ev = evaluations.find((e: any) => e.id === ka.id);
         const match = ev ? Math.max(0, Math.min(1, Number(ev.match_score))) : 0;
         const explanation = ev?.explanation || '未找到评分结果';
-        
+        const cfType = (ka as any).controlFlowType || 'required';
+
+        if (cfType === 'optional') {
+            reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}] (可选): ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: 0, 不扣分)`);
+            return;
+        }
+
+        if (cfType === 'handoff') {
+            totalWeightedScore += match * ka.weight;
+            totalWeight += ka.weight;
+            reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}] (衔接): ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${ka.weight})`);
+            return;
+        }
+
+        if (cfType === 'loop') {
+            const loopCondition = (ka as any).loopCondition || '';
+            const minCount = (ka as any).expectedMinCount;
+            const maxCount = (ka as any).expectedMaxCount;
+            totalWeightedScore += match * ka.weight;
+            totalWeight += ka.weight;
+            reasonLines.push(`2. **Key Action** [${ka.content.replace(/\n/g, ' ')}] (循环${loopCondition ? ' - ' + loopCondition : ''}): ${(match * 100).toFixed(0)}% match. ${explanation} (Weight: ${ka.weight}, 预期次数: ${minCount ?? '?'}~${maxCount ?? '?'})`);
+            return;
+        }
+
         totalWeightedScore += match * ka.weight;
         totalWeight += ka.weight;
         

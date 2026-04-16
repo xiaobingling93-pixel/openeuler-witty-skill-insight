@@ -395,6 +395,26 @@ export default function ExecutionFlowComparison({
                         'unexpected': { text: '非预期调用', color: c.error },
                         'skipped': { text: '跳过', color: c.fgMuted }
                       };
+
+                      const controlFlowLabel: Record<string, { text: string; color: string }> = {
+                        'required': { text: '必选', color: '#38bdf8' },
+                        'conditional': { text: '条件分支', color: '#fbbf24' },
+                        'loop': { text: '循环', color: '#a78bfa' },
+                        'optional': { text: '可选', color: '#94a3b8' },
+                        'handoff': { text: '衔接', color: '#4ade80' },
+                      };
+
+                      const getControlFlowType = (stepName: string): string | null => {
+                        if (!matchData.matchJson) return null;
+                        try {
+                          const matchResult = JSON.parse(matchData.matchJson);
+                          const match = matchResult.matches?.find((m: any) => m.expectedStepName === stepName);
+                          if (match?.expectedStepId) {
+                            return null;
+                          }
+                        } catch {}
+                        return null;
+                      };
                       
                       return (
                         <div style={{ 
@@ -413,6 +433,7 @@ export default function ExecutionFlowComparison({
                                 <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}`, width: '80px' }}>对话轮数</th>
                                 <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}`, width: '120px' }}>步骤名称</th>
                                 <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}`, width: '110px' }}>状态</th>
+                                <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}`, width: '90px' }}>控制流</th>
                                 <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}` }}>问题描述</th>
                                 <th style={{ padding: '0.75rem', textAlign: 'left', color: c.fgMuted, borderBottom: `1px solid ${c.border}` }}>改进建议</th>
                               </tr>
@@ -443,6 +464,24 @@ export default function ExecutionFlowComparison({
                                     }}>
                                       {statusLabel[step.status]?.text || step.status}
                                     </span>
+                                  </td>
+                                  <td style={{ padding: '0.75rem', borderBottom: `1px solid ${c.border}` }}>
+                                    {(() => {
+                                      const cfType = (step as any).controlFlowType || getControlFlowType(step.stepName) || 'required';
+                                      const cfInfo = controlFlowLabel[cfType];
+                                      if (!cfInfo) return <span style={{ color: c.fgMuted, fontSize: '0.8rem' }}>-</span>;
+                                      return (
+                                        <span style={{ 
+                                          padding: '2px 8px', 
+                                          borderRadius: '4px', 
+                                          background: `${cfInfo.color}20`,
+                                          color: cfInfo.color,
+                                          fontSize: '0.8rem'
+                                        }}>
+                                          {cfInfo.text}
+                                        </span>
+                                      );
+                                    })()}
                                   </td>
                                   <td style={{ padding: '0.75rem', color: c.fg, borderBottom: `1px solid ${c.border}` }}>{step.problem}</td>
                                   <td style={{ padding: '0.75rem', color: c.primary, borderBottom: `1px solid ${c.border}` }}>{step.suggestion}</td>

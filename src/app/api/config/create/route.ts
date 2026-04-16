@@ -3,6 +3,7 @@ import { db } from '@/lib/prisma';
 import { getProxyConfig } from '@/lib/proxy-config';
 import { getActiveConfig } from '@/lib/server-config';
 import { generateAnswerExtractionPrompt, generateConfigExtractionPrompt } from '@/prompts/config-extraction-prompt';
+import { extractKeyActionsFromFlow, mergeKeyActionsFromMultipleSkills, type ExtractedKeyAction, type ParsedFlowResult } from '@/lib/flow-parser';
 import { NextResponse } from 'next/server';
 import { OpenAI } from "openai";
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
@@ -14,6 +15,7 @@ async function processConfigAsync(
     query: string, 
     standardAnswer: string, 
     documentContent: string | null,
+    expectedSkills: { skill: string; version: number | null }[] | null,
     user?: string | null
 ) {
     try {
@@ -98,13 +100,79 @@ async function processConfigAsync(
         }
         const extractedData = JSON.parse(jsonStr);
         const rootCauses = extractedData.root_causes || [];
-        const keyActions = extractedData.key_actions || [];
+        const keyActionsFromAnswer = extractedData.key_actions || [];
 
-        await db.updateConfig(configId, {
+        let finalKeyActions = keyActionsFromAnswer;
+        let extractedKeyActionsData: ExtractedKeyAction[] | null = null;
+
+        const skillNamesToExtract = expectedSkills && expectedSkills.length > 0
+            ? expectedSkills.map(e => e.skill.trim()).filter(Boolean)
+            : [];
+
+        if (skillNamesToExtract.length > 0) {
+            try {
+                const allActions: { name: string; actions: ExtractedKeyAction[] }[] = [];
+
+                for (const skillName of skillNamesToExtract) {
+                    const skill = await db.findSkill(skillName, user || null);
+                    if (!skill) {
+                        console.warn(`[ConfigCreate] Skill "${skillName}" not found, skipping extraction`);
+                        continue;
+                    }
+
+                    const targetVersion = skill.activeVersion || 0;
+                    const sv = skill.versions?.find((v: any) => v.version === targetVersion) || skill.versions?.[0];
+                    if (!sv?.content) continue;
+
+                    const parsedFlow = await db.findParsedFlow(skill.id, sv.version, user || null);
+                    if (parsedFlow) {
+                        const flow: ParsedFlowResult = JSON.parse(parsedFlow.flowJson);
+                        const actions = extractKeyActionsFromFlow(flow);
+                        allActions.push({ name: skillName, actions });
+                    } else {
+                        console.warn(`[ConfigCreate] No parsed flow for skill "${skillName}" v${sv.version}, skipping`);
+                    }
+                }
+
+                if (allActions.length > 0) {
+                    let extractedActions: ExtractedKeyAction[];
+                    if (allActions.length === 1) {
+                        extractedActions = allActions[0].actions;
+                    } else {
+                        extractedActions = mergeKeyActionsFromMultipleSkills(allActions);
+                    }
+
+                    finalKeyActions = extractedActions.map(a => ({
+                        content: a.content,
+                        weight: a.weight,
+                        ...(a.controlFlowType !== 'required' ? { controlFlowType: a.controlFlowType } : {}),
+                        ...(a.condition ? { condition: a.condition } : {}),
+                        ...(a.branchLabel ? { branchLabel: a.branchLabel } : {}),
+                        ...(a.loopCondition ? { loopCondition: a.loopCondition } : {}),
+                        ...(a.expectedMinCount !== undefined ? { expectedMinCount: a.expectedMinCount } : {}),
+                        ...(a.expectedMaxCount !== undefined ? { expectedMaxCount: a.expectedMaxCount } : {}),
+                        ...(a.groupId ? { groupId: a.groupId } : {}),
+                    }));
+                    extractedKeyActionsData = extractedActions;
+
+                    console.log(`[ConfigCreate] Extracted ${extractedActions.length} key actions from Skill(s): ${skillNamesToExtract.join(', ')}`);
+                }
+            } catch (err) {
+                console.error('[ConfigCreate] Error extracting key actions from Skill:', err);
+            }
+        }
+
+        const updateData: any = {
             rootCauses: JSON.stringify(rootCauses),
-            keyActions: JSON.stringify(keyActions),
+            keyActions: JSON.stringify(finalKeyActions),
             parseStatus: 'completed'
-        });
+        };
+
+        if (extractedKeyActionsData) {
+            updateData.extractedKeyActions = JSON.stringify(extractedKeyActionsData);
+        }
+
+        await db.updateConfig(configId, updateData);
 
         console.log(`[ConfigCreate] Successfully extracted key points for config ${configId}`);
     } catch (error: any) {
@@ -244,7 +312,7 @@ export async function POST(request: Request) {
             parse_status: 'parsing'
         };
 
-        processConfigAsync(newConfig.id, query, standardAnswer, documentContent, user);
+        processConfigAsync(newConfig.id, query, standardAnswer, documentContent, expectedSkills, user);
 
         return NextResponse.json(formattedConfig);
 
