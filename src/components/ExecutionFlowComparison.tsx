@@ -56,21 +56,42 @@ export default function ExecutionFlowComparison({
   const [error, setError] = useState<string>('');
   const [analysisExpanded, setAnalysisExpanded] = useState(true);
   const [componentExpanded, setComponentExpanded] = useState(false);
-    const { isDark } = useTheme();
-    const c = useThemeColors();
+  const [autoParsing, setAutoParsing] = useState(false);
+  const { isDark } = useTheme();
+  const c = useThemeColors();
 
 
   const actualSkillId = skillId && skillId.trim() ? skillId : null;
 
   useEffect(() => {
-    apiFetch(`/api/executions/${executionId}/analyze-match`)
-      .then(res => res.json())
-      .then((data: MatchData) => {
-        if (data.analyzed) {
-          setMatchData(data);
-        }
-      })
-      .catch(() => {});
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const checkMatchData = () => {
+      apiFetch(`/api/executions/${executionId}/analyze-match`)
+        .then(res => res.json())
+        .then((data: MatchData) => {
+          if (data.analyzed) {
+            if (!data.dynamicMermaid && !data.staticMermaid && !data.matchJson) {
+              setAutoParsing(true);
+              pollTimer = setTimeout(checkMatchData, 3000);
+            } else {
+              setAutoParsing(false);
+              setMatchData(data);
+            }
+          } else {
+            setAutoParsing(false);
+          }
+        })
+        .catch(() => {
+          setAutoParsing(false);
+        });
+    };
+
+    checkMatchData();
+
+    return () => {
+      if (pollTimer) clearTimeout(pollTimer);
+    };
   }, [executionId]);
 
   const handleDynamicAnalyze = async () => {
@@ -195,6 +216,22 @@ export default function ExecutionFlowComparison({
 
       {componentExpanded && (
         <div style={{ padding: '1.5rem' }}>
+          {autoParsing && (
+            <div style={{ 
+              padding: '0.75rem', 
+              background: 'rgba(56, 189, 248, 0.1)', 
+              borderRadius: '4px', 
+              color: '#38bdf8',
+              marginBottom: '1rem',
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>🔄</span>
+              正在自动解析执行轨迹，请稍候...模型调用需要2-3分钟，如长时间未完成，可点击按钮手动重新解析
+            </div>
+          )}
           <div style={{ 
             display: 'flex', 
             justifyContent: 'flex-end', 
@@ -203,7 +240,7 @@ export default function ExecutionFlowComparison({
           }}>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button
-                onClick={(e) => { e.stopPropagation(); handleDynamicAnalyze(); }}
+                onClick={(e) => { e.stopPropagation(); setAutoParsing(false); handleDynamicAnalyze(); }}
                 disabled={analyzing}
                 style={{
                   padding: '6px 16px',
@@ -219,7 +256,7 @@ export default function ExecutionFlowComparison({
                 {analyzing && analyzeMode === 'dynamic' ? '分析中...' : '流程解析'}
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); handleCompareAnalyze(); }}
+                onClick={(e) => { e.stopPropagation(); setAutoParsing(false); handleCompareAnalyze(); }}
                 disabled={analyzing}
                 style={{
                   padding: '6px 16px',
@@ -421,7 +458,9 @@ export default function ExecutionFlowComparison({
                           background: c.bg, 
                           borderRadius: '6px', 
                           border: `1px solid ${c.border}`,
-                          overflow: 'hidden'
+                          overflow: 'hidden',
+                          maxHeight: '600px',
+                          overflowY: 'auto'
                         }}>
                           <table style={{ 
                             width: '100%', 

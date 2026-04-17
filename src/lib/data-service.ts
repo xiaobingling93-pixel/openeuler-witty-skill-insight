@@ -689,6 +689,18 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                         }
                     }
 
+                    let executionSteps: { name: string; description: string; type: string }[] | null = null;
+                    try {
+                        const matchRecord = await db.findExecutionMatch(targetRecord.task_id || targetRecord.upload_id || '');
+                        if (matchRecord?.extractedSteps) {
+                            executionSteps = typeof matchRecord.extractedSteps === 'string' 
+                                ? JSON.parse(matchRecord.extractedSteps) 
+                                : matchRecord.extractedSteps;
+                        }
+                    } catch (e) {
+                        console.warn('[Judgment] Failed to load execution steps for KA evaluation:', e);
+                    }
+
                     const judgment = await judgeAnswer(
                         targetRecord.query || '',
                         {
@@ -698,7 +710,8 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                             skill_definition: skillDefinition
                         },
                         targetRecord.final_result,
-                        targetRecord.user
+                        targetRecord.user,
+                        executionSteps
                     );
                     isAnswerCorrect = judgment.is_correct;
                     targetRecord.answer_score = judgment.score;

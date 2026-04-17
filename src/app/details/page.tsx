@@ -2016,7 +2016,7 @@ function DetailPage() {
                                                 );
                                             }
                                             return (
-                                                <div style={{ background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border)', overflowX: 'visible' }}>
+                                                <div style={{ background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border)', overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: '950px' }}>
                                                         <thead>
                                                             <tr style={{ background: 'var(--background-secondary)' }}>

@@ -93,7 +93,8 @@ export async function judgeAnswer(
   userQuery: string,
   criteria: JudgeCriteria,
   actualAnswer: string,
-  user?: string | null
+  user?: string | null,
+  executionSteps?: { name: string; description: string; type: string }[] | null
 ): Promise<JudgmentResult> {
   const { client, model } = await getLlmClient(user);
   if (!client || !client.apiKey) {
@@ -105,50 +106,65 @@ export async function judgeAnswer(
     const rootCauses = criteria.root_causes || [];
     const keyActions = criteria.key_actions || [];
     
-    // Build indexed lists for the prompt
     const rcList = rootCauses.map((rc, i) => ({ id: `RC-${i}`, ...rc }));
     const kaList = keyActions.map((ka, i) => ({ id: `KA-${i}`, ...ka }));
     
-    // Generate prompt
     const { generateJudgePrompt } = require('../prompts/judge-prompt');
-    const prompt = generateJudgePrompt(userQuery, actualAnswer, rcList, kaList, criteria.skill_definition);
 
-    const response = await withTimeout(
-      client.chat.completions.create({
-        messages: [{ role: "user", content: prompt }],
-        model: model,
-      }),
-      'Judgment API',
-    );
+    let evaluations: any[] = [];
 
-    // --- DEBUG LOG ---
-    console.log(`[Judge API Debug] Model: ${model}. Received response choices:`, response?.choices?.length);
-
-    const content = response.choices?.[0]?.message?.content;
-    
-    appendLog('result_evaluation', { prompt }, { raw_output: content });
-
-    if (!content) {
-        console.error("\n[Judge API Error 🚨] LLM content is empty or undefined!");
-        console.error(">>> Full LLM Response:");
-        console.error(JSON.stringify(response, null, 2));
-        console.error("<<<\n");
-        throw new Error("No content from evaluation model");
-    }
-
-    let jsonStr = content.trim();
-    const match = jsonStr.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);
-    if (match) {
-        jsonStr = match[1];
-    } else {
-        const first = jsonStr.indexOf('{');
-        const last = jsonStr.lastIndexOf('}');
-        if (first !== -1 && last !== -1 && last >= first) {
-            jsonStr = jsonStr.substring(first, last + 1);
+    if (rcList.length > 0) {
+        const rcPrompt = generateJudgePrompt(userQuery, actualAnswer, rcList, [], criteria.skill_definition, 'root_causes');
+        const rcResponse = await withTimeout(
+            client.chat.completions.create({
+                messages: [{ role: "user", content: rcPrompt }],
+                model: model,
+            }),
+            'RC Judgment API',
+        );
+        console.log(`[Judge API Debug] RC Model: ${model}. Received response choices:`, rcResponse?.choices?.length);
+        const rcContent = rcResponse.choices?.[0]?.message?.content;
+        appendLog('rc_evaluation', { prompt: rcPrompt }, { raw_output: rcContent });
+        if (rcContent) {
+            let jsonStr = rcContent.trim();
+            const m = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+            if (m) jsonStr = m[1];
+            else { const f = jsonStr.indexOf('{'); const l = jsonStr.lastIndexOf('}'); if (f !== -1 && l !== -1 && l >= f) jsonStr = jsonStr.substring(f, l + 1); }
+            try { const rcResult = JSON.parse(jsonStr); evaluations.push(...(rcResult.evaluations || [])); } catch (e) { console.warn('[Judge] Failed to parse RC result:', e); }
         }
     }
-    const result = JSON.parse(jsonStr);
-    const evaluations = result.evaluations || [];
+
+    if (kaList.length > 0) {
+        const stepsText = executionSteps && executionSteps.length > 0
+            ? executionSteps.map((s, i) => `步骤${i + 1}: [${s.type}] ${s.name} - ${s.description}`).join('\n')
+            : null;
+
+        const kaPrompt = generateJudgePrompt(
+            userQuery, 
+            stepsText || actualAnswer, 
+            [], kaList, 
+            criteria.skill_definition, 
+            'key_actions',
+            stepsText ? stepsText : null
+        );
+        const kaResponse = await withTimeout(
+            client.chat.completions.create({
+                messages: [{ role: "user", content: kaPrompt }],
+                model: model,
+            }),
+            'KA Judgment API',
+        );
+        console.log(`[Judge API Debug] KA Model: ${model}. Received response choices:`, kaResponse?.choices?.length);
+        const kaContent = kaResponse.choices?.[0]?.message?.content;
+        appendLog('ka_evaluation', { prompt: kaPrompt }, { raw_output: kaContent });
+        if (kaContent) {
+            let jsonStr = kaContent.trim();
+            const m = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+            if (m) jsonStr = m[1];
+            else { const f = jsonStr.indexOf('{'); const l = jsonStr.lastIndexOf('}'); if (f !== -1 && l !== -1 && l >= f) jsonStr = jsonStr.substring(f, l + 1); }
+            try { const kaResult = JSON.parse(jsonStr); evaluations.push(...(kaResult.evaluations || [])); } catch (e) { console.warn('[Judge] Failed to parse KA result:', e); }
+        }
+    }
     
     // --- Calculate Score in Code (to avoid LLM math errors) ---
     let totalWeightedScore = 0;

@@ -171,6 +171,14 @@ export async function parseSkillFlow(
   }
 
   try {
+    await db.upsertParsedFlow({
+      skillId,
+      version,
+      user: user || null,
+      flowJson: null,
+      mermaidCode: null
+    });
+
     const prompt = generateFlowParsePrompt(skillContent);
     
     const response = await client.chat.completions.create({
@@ -1040,6 +1048,20 @@ export async function analyzeDynamicOnly(
     }
 
     const interactionCount = Array.isArray(interactions) ? interactions.length : 0;
+
+    await db.upsertExecutionMatch({
+      executionId,
+      skillId: null,
+      skillVersion: null,
+      user: user || null,
+      mode: 'dynamic',
+      matchJson: null,
+      staticMermaid: null,
+      dynamicMermaid: null,
+      analysisText: null,
+      extractedSteps: null,
+      interactionCount
+    });
     
     // 使用分批并行提取步骤（与 Skill 对比相同的逻辑）
     const allExtractedSteps = await extractStepsInBatches(client, model, interactions);
