@@ -6,6 +6,7 @@ import { getModelPricing, calculateCost, getModelContextWindow, DEFAULT_CACHE_RE
 import { deriveOpencodeExecutionFields } from './opencode-derived-metrics';
 import { chooseExecutionLabel } from './label-utils';
 import { parseLabelSkillVersionBinding } from './label-skill-binding';
+import { extractKeyActionsFromFlow, mergeKeyActionsFromMultipleSkills, type ExtractedKeyAction, type ParsedFlowResult } from './flow-parser';
 
 export interface InvokedSkill {
     name: string;
@@ -72,6 +73,7 @@ export interface ConfigItem {
     standard_answer: string;
     root_causes?: { content: string; weight: number }[];
     key_actions?: { content: string; weight: number }[];
+    extractedKeyActions?: { id: string; content: string; weight: number; controlFlowType: string; condition?: string; branchLabel?: string; loopCondition?: string; expectedMinCount?: number; expectedMaxCount?: number; skillSource?: string }[];
 }
 
 function normalizeQueryForMatch(input: string): string {
@@ -301,6 +303,7 @@ export async function readConfig(user?: string | null): Promise<ConfigItem[]> {
             standard_answer: c.standardAnswer,
             root_causes: parse(c.rootCauses, 'rootCauses'),
             key_actions: parse(c.keyActions, 'keyActions'),
+            extractedKeyActions: parse(c.extractedKeyActions, 'extractedKeyActions'),
             parse_status: c.parseStatus || 'completed',
         };
     });
@@ -587,6 +590,70 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
             }
             targetRecord.is_skill_correct = isSkillCorrect;
 
+            if (!matchedConfig.key_actions || matchedConfig.key_actions.length === 0) {
+                const expectedSkillsList = matchedConfig.expectedSkills || [];
+                const skillForLegacy = matchedConfig.skill?.trim();
+                const skillNamesToExtract = expectedSkillsList.length > 0
+                    ? expectedSkillsList.map(e => e.skill.trim()).filter(Boolean)
+                    : (skillForLegacy ? [skillForLegacy] : []);
+
+                if (skillNamesToExtract.length > 0) {
+                    try {
+                        const allActions: { name: string; actions: ExtractedKeyAction[] }[] = [];
+
+                        for (const skillName of skillNamesToExtract) {
+                            const skill = await db.findSkill(skillName, targetRecord.user || null);
+                            if (!skill) continue;
+
+                            const targetVersion = skill.activeVersion || 0;
+                            const sv = skill.versions?.find((v: any) => v.version === targetVersion) || skill.versions?.[0];
+                            if (!sv?.content) continue;
+
+                            const parsedFlow = await db.findParsedFlow(skill.id, sv.version, targetRecord.user || null);
+                            if (parsedFlow) {
+                                const flow: ParsedFlowResult = JSON.parse(parsedFlow.flowJson);
+                                const actions = extractKeyActionsFromFlow(flow);
+                                allActions.push({ name: skillName, actions });
+                            }
+                        }
+
+                        if (allActions.length > 0) {
+                            let extractedActions: ExtractedKeyAction[];
+                            if (allActions.length === 1) {
+                                extractedActions = allActions[0].actions;
+                            } else {
+                                extractedActions = mergeKeyActionsFromMultipleSkills(allActions);
+                            }
+
+                            matchedConfig.key_actions = extractedActions.map(a => ({
+                                content: a.content,
+                                weight: a.weight,
+                                ...(a.controlFlowType !== 'required' ? { controlFlowType: a.controlFlowType } : {}),
+                                ...(a.condition ? { condition: a.condition } : {}),
+                                ...(a.branchLabel ? { branchLabel: a.branchLabel } : {}),
+                                ...(a.loopCondition ? { loopCondition: a.loopCondition } : {}),
+                                ...(a.expectedMinCount !== undefined ? { expectedMinCount: a.expectedMinCount } : {}),
+                                ...(a.expectedMaxCount !== undefined ? { expectedMaxCount: a.expectedMaxCount } : {}),
+                                ...(a.groupId ? { groupId: a.groupId } : {}),
+                            }));
+                            matchedConfig.extractedKeyActions = extractedActions;
+
+                            try {
+                                await db.updateConfig(matchedConfig.id, {
+                                    keyActions: JSON.stringify(matchedConfig.key_actions),
+                                    extractedKeyActions: JSON.stringify(extractedActions),
+                                });
+                                console.log(`[AutoExtract] Auto-filled key_actions for config ${matchedConfig.id} from ${skillNamesToExtract.join(', ')}`);
+                            } catch (err) {
+                                console.error('[AutoExtract] Error updating config with extracted key_actions:', err);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[AutoExtract] Error extracting key_actions from Skill:', err);
+                    }
+                }
+            }
+
             if (targetRecord.final_result !== undefined) {
                 let needsJudgment = true;
 
@@ -622,6 +689,18 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                         }
                     }
 
+                    let executionSteps: { name: string; description: string; type: string }[] | null = null;
+                    try {
+                        const matchRecord = await db.findExecutionMatch(targetRecord.task_id || targetRecord.upload_id || '');
+                        if (matchRecord?.extractedSteps) {
+                            executionSteps = typeof matchRecord.extractedSteps === 'string' 
+                                ? JSON.parse(matchRecord.extractedSteps) 
+                                : matchRecord.extractedSteps;
+                        }
+                    } catch (e) {
+                        console.warn('[Judgment] Failed to load execution steps for KA evaluation:', e);
+                    }
+
                     const judgment = await judgeAnswer(
                         targetRecord.query || '',
                         {
@@ -631,7 +710,8 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
                             skill_definition: skillDefinition
                         },
                         targetRecord.final_result,
-                        targetRecord.user
+                        targetRecord.user,
+                        executionSteps
                     );
                     isAnswerCorrect = judgment.is_correct;
                     targetRecord.answer_score = judgment.score;

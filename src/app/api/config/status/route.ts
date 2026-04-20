@@ -27,9 +27,11 @@ export async function GET(request: Request) {
 
         let rootCauses = [];
         let keyActions = [];
+        let extractedKeyActions = null;
         try {
             if (config.rootCauses) rootCauses = JSON.parse(config.rootCauses);
             if (config.keyActions) keyActions = JSON.parse(config.keyActions);
+            if (config.extractedKeyActions) extractedKeyActions = JSON.parse(config.extractedKeyActions);
         } catch (e) {}
 
         return NextResponse.json({
@@ -39,6 +41,7 @@ export async function GET(request: Request) {
             standard_answer: config.standardAnswer,
             root_causes: rootCauses,
             key_actions: keyActions,
+            extractedKeyActions: extractedKeyActions,
             parse_status: config.parseStatus || 'completed'
         });
     } catch (error: any) {
