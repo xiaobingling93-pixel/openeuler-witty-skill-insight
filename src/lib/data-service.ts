@@ -136,6 +136,7 @@ export function findBestMatchConfig(configs: ConfigItem[], userQuery: string | u
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const EVALUATION_FILE = path.join(DATA_DIR, 'evaluation_result.json');
+const AUDIT_DATA_MUTATIONS = process.env.AUDIT_DATA_MUTATIONS === '1' || process.env.AUDIT_DATA_MUTATIONS === 'true';
 
 export async function readRecords(user?: string, filters?: { query?: string; taskId?: string; framework?: string; skill?: string; skillVersion?: number }): Promise<ExecutionRecord[]> {
     const where: any = {};
@@ -210,6 +211,10 @@ export async function readRecords(user?: string, filters?: { query?: string; tas
         if (group.length <= 1) continue;
         for (const r of group) {
             if (!keepIds.has(r.id)) {
+                if (AUDIT_DATA_MUTATIONS) {
+                    const keepId = group.find(x => keepIds.has(x.id))?.id ?? 'unknown';
+                    console.warn(`[Data-Audit] deleteExecution (read dedup): taskId=${tid} deleteId=${r.id} keepId=${keepId}`);
+                }
                 db.deleteExecution(r.id).catch(() => {});
             }
         }
@@ -822,6 +827,9 @@ export async function saveExecutionRecord(data: ExecutionRecord): Promise<{ succ
         try {
             const dup = await db.findExecutionById(data.upload_id);
             if (dup && dup.taskId === data.task_id) {
+                if (AUDIT_DATA_MUTATIONS) {
+                    console.warn(`[Data-Audit] deleteExecution (dedup on save): upload_id=${data.upload_id} task_id=${data.task_id} recordId=${recordId}`);
+                }
                 await db.deleteExecution(data.upload_id);
             }
         } catch {}

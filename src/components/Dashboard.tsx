@@ -751,11 +751,16 @@ export default function Dashboard() {
     useEffect(() => {
         if (user) {
             fetchData();
-            fetchConfig();
             fetchSkills();
             fetchServerSettings();
         }
     }, [user, fetchServerSettings]);
+
+    useEffect(() => {
+        if (activeTab === 'config' && user) {
+            fetchConfig();
+        }
+    }, [activeTab, user]);
 
     // --- Actions ---
     const handleDelete = async (record: Execution) => {
