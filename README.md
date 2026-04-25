@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://gitcode.com/openeuler/witty-skill-insight">
-    <strong style="font-size: 2em;">Skill-insight</strong>
+    <strong style="font-size: 6em;">Skill-insight</strong>
   </a>
 </p>
 <p align="center">让 Agent 的 Skill 从"能用"到"好用"——基于执行过程数据，实现 Skill 生成、评测与优化的全生命周期闭环</p>
@@ -51,20 +51,17 @@ Skill-insight 正是为了解决这些问题而生。
 
 ## 支持框架
 
-| Agent 框架 | 采集方式 |
-|:----------|:--------|
-| OpenCode  | 原生插件 |
+| Agent 框架    | 采集方式 |
+| :---------- | :--- |
+| OpenCode    | 原生插件 |
 | Claude Code | 日志旁路 |
-| OpenClaw  | 日志旁路 |
+| OpenClaw    | 日志旁路 |
 
-## 安装
+## 安装 （Node.js 版本必须 ≥ v20.x）
 
 ```bash
 # 一键安装
 npx @witty-ai/skill-insight install
-
-# 包管理器
-npm i -g @witty-ai/skill-insight
 ```
 
 > [!TIP]
@@ -117,7 +114,7 @@ npx skills add https://gitcode.com/openeuler/witty-skill-insight.git
 
 ### 第四步：查看观测结果
 
-任务执行完毕后，点击 OpenCode 终端页面右上角 Skill Insight 卡片中的**查看详情**，跳转到平台查看执行详情。
+任务执行完毕后，点击 OpenCode 终端页面右上角 Skill insight 卡片中的**查看详情**，跳转到平台查看执行详情。
 
 ### 第五步：深度评测（可选）
 
